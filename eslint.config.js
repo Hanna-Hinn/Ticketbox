@@ -9,7 +9,7 @@ import eslintConfigPrettier from "eslint-config-prettier";
 // business logic to check — TB-009 already touches this file for the layer
 // boundary rules, so that's a natural point to reconsider.
 export default tseslint.config(
-  { ignores: ["**/dist/**", "**/coverage/**", "**/node_modules/**", "**/.husky/**"] },
+  { ignores: ["**/dist/**", "**/coverage/**"] },
   js.configs.recommended,
   ...tseslint.configs.strict,
   ...tseslint.configs.stylistic,
