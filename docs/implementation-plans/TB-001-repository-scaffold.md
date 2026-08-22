@@ -1,6 +1,6 @@
 # TB-001 — Repository scaffold
 
-**Status:** Approved
+**Status:** Implemented — see [`docs/tasks/TB-001-repository-scaffold.md`](../tasks/TB-001-repository-scaffold.md) for what actually happened, including two divergences worth knowing about (TypeScript 7→6.0.3, corepack→npm for pnpm)
 **Date:** 2026-08-22
 **Task:** TB-001 (`docs/02-product-delivery-plan.md`)
 **Branch:** `feat/TB-001-repository-scaffold`

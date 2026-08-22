@@ -4,8 +4,8 @@ Measured numbers, not estimates. Every row here should be reproducible by runnin
 
 Fill this in as you go — each section corresponds to a specific task in `02-product-delivery-plan.md`. The point of this file is to let you say, with a straight face, exactly how much a given optimization bought you and where the win actually came from.
 
-**Machine:** _fill in — CPU, RAM, OS, Docker resource limits if constrained_
-**Date started:** _fill in_
+**Machine:** 13th Gen Intel Core i7-13650HX, 32 GB RAM, Windows 11 Pro (10.0.26200), Node v22.20.0. No Docker resource limits set yet — Docker itself arrives in TB-002.
+**Date started:** 2026-08-22
 
 ---
 
@@ -41,11 +41,11 @@ Index added: `<paste the CREATE INDEX statement>`
 
 ### Load test — `autocannon -c 50 -d 10 http://localhost:3000/events/<id>`
 
-| | Unindexed | Indexed |
-|---|---|---|
-| req/s (avg) | | |
-| p50 latency | | |
-| p99 latency | | |
+|             | Unindexed | Indexed |
+| ----------- | --------- | ------- |
+| req/s (avg) |           |         |
+| p50 latency |           |         |
+| p99 latency |           |         |
 
 **Notes:** _what actually changed, in your own words — was it the index, or something else?_
 
@@ -55,12 +55,12 @@ Index added: `<paste the CREATE INDEX statement>`
 
 Same load test, same endpoint, `CachedEventRepository` in front of the **indexed** repository — compare against the indexed row above, not the unindexed one.
 
-| | Indexed (no cache) | Cached, cold | Cached, warm |
-|---|---|---|---|
-| req/s (avg) | | | |
-| p50 latency | | | |
-| p99 latency | | | |
-| Postgres queries issued | | | |
+|                         | Indexed (no cache) | Cached, cold | Cached, warm |
+| ----------------------- | ------------------ | ------------ | ------------ |
+| req/s (avg)             |                    |              |              |
+| p50 latency             |                    |              |              |
+| p99 latency             |                    |              |              |
+| Postgres queries issued |                    |              |              |
 
 **Hit ratio at steady state** (`GET /_stats`): _fill in_
 
@@ -76,11 +76,11 @@ Same load test, same endpoint, `CachedEventRepository` in front of the **indexed
 <paste the benchmark script or command>
 ```
 
-| Method | Total time | Round trips | Atomic? |
-|---|---|---|---|
-| Sequential (no pipeline) | | 1000 | No |
-| Pipelined | | 1 | No |
-| Lua script | | 1 | Yes |
+| Method                   | Total time | Round trips | Atomic? |
+| ------------------------ | ---------- | ----------- | ------- |
+| Sequential (no pipeline) |            | 1000        | No      |
+| Pipelined                |            | 1           | No      |
+| Lua script               |            | 1           | Yes     |
 
 **Notes:** _pipelining and Lua both cut round-trips — write down, in your own words, what Lua buys you that pipelining doesn't, and why that distinction mattered in Stage 5._
 
@@ -90,10 +90,10 @@ Same load test, same endpoint, `CachedEventRepository` in front of the **indexed
 
 Keyspace size when measured: `<N>` keys.
 
-| | `KEYS ticketbox:v1:hold:*` | `SCAN` (COUNT 100) |
-|---|---|---|
-| Time to complete | | |
-| p99 latency of a concurrent `GET` during the scan | | |
+|                                                   | `KEYS ticketbox:v1:hold:*` | `SCAN` (COUNT 100) |
+| ------------------------------------------------- | -------------------------- | ------------------ |
+| Time to complete                                  |                            |                    |
+| p99 latency of a concurrent `GET` during the scan |                            |                    |
 
 **Notes:**
 
@@ -103,11 +103,11 @@ Keyspace size when measured: `<N>` keys.
 
 `maxmemory 20mb`
 
-| Policy | `evicted_keys` after fill | Writes fail? | Did a hold/lock key get evicted? |
-|---|---|---|---|
-| `noeviction` | | | |
-| `allkeys-lru` | | | |
-| `volatile-lru` | | | |
+| Policy         | `evicted_keys` after fill | Writes fail? | Did a hold/lock key get evicted? |
+| -------------- | ------------------------- | ------------ | -------------------------------- |
+| `noeviction`   |                           |              |                                  |
+| `allkeys-lru`  |                           |              |                                  |
+| `volatile-lru` |                           |              |                                  |
 
 **Notes:** _did volatile-lru actually fix the correctness problem, or just make it less likely?_
 
@@ -117,10 +117,10 @@ Keyspace size when measured: `<N>` keys.
 
 `docker kill` (not `stop`) mid-write, then restart.
 
-| Config | Data written before kill | Data present after restart |
-|---|---|---|
-| RDB only | | |
-| AOF | | |
+| Config   | Data written before kill | Data present after restart |
+| -------- | ------------------------ | -------------------------- |
+| RDB only |                          |                            |
+| AOF      |                          |                            |
 
 **Chosen config for this project:** _fill in, with a one-line reason_
 
@@ -130,10 +130,10 @@ Keyspace size when measured: `<N>` keys.
 
 The naive `HGET`-then-`HINCRBY` implementation vs. the Lua-scripted one. 200 concurrent requests against a tier with 10 remaining.
 
-| Implementation | Requests that "succeeded" | Final availability | Oversold by |
-|---|---|---|---|
-| Naive (TB-021 spike) | | | |
-| Lua (TB-022) | | 0 (expected) | 0 (expected) |
+| Implementation       | Requests that "succeeded" | Final availability | Oversold by  |
+| -------------------- | ------------------------- | ------------------ | ------------ |
+| Naive (TB-021 spike) |                           |                    |              |
+| Lua (TB-022)         |                           | 0 (expected)       | 0 (expected) |
 
 **Notes:** _paste the actual numbers you saw in the spike — this is the row that justifies the whole project._
 
