@@ -1,0 +1,17 @@
+{
+  "name": "@ticketbox/api",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test:unit": "vitest run --config vitest.unit.config.ts",
+    "test:integration": "vitest run --config vitest.integration.config.ts --passWithNoTests"
+  },
+  "devDependencies": {
+    "@types/node": "^26.2.0",
+    "@vitest/coverage-v8": "^4.1.11",
+    "autocannon": "^8.0.0",
+    "typescript": "^6.0.3",
+    "vitest": "^4.1.11"
+  }
+}
