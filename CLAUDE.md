@@ -316,7 +316,7 @@ Rules:
 
 - **Conventional Commits**: `feat(holds): add Lua-backed reserve`. Enforced by commitlint.
 - Branch `feat/TB-0NN-short-slug`. Squash merge.
-- PR description states: **what**, **why**, **which tests were added**, **which task ID it closes**, and links **the approved implementation plan** and **the task doc**.
+- PR description states: **what**, **why**, **which tests were added**, **which task ID it closes**, and links **the approved implementation plan** and **the task doc** — [`.github/pull_request_template.md`](.github/pull_request_template.md) pre-fills this and turns the five phases into a checklist.
 - **CI must be green to merge. No exceptions.**
 - **All five workflow phases complete.** A PR without an approved plan, a clean code review, and a task doc is not ready, whatever CI says.
 
