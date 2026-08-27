@@ -407,7 +407,7 @@ Do not proceed to TB-022 until you have seen this fail with your own eyes. Readi
 ## Progress tracker
 
 ```
-Stage 0  ■■□□□              TB-001 002 003 004 005
+Stage 0  ■■■□□              TB-001 002 003 004 005
 Stage 1  □□□□               TB-006 007 008 009
 Stage 2  □□□□               TB-010 011 012 013
 Stage 3  □□□                TB-014 015 016
