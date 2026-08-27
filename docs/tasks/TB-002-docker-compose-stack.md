@@ -4,7 +4,7 @@
 **Date completed:** 2026-08-27
 **Task:** TB-002 (`docs/02-product-delivery-plan.md`)
 **Plan:** [`docs/implementation-plans/TB-002-docker-compose-stack.md`](../implementation-plans/TB-002-docker-compose-stack.md)
-**Branch / PR:** `feat/TB-002-docker-compose-stack` · (PR not yet opened)
+**Branch / PR:** `feat/TB-002-docker-compose-stack` · [#3](https://github.com/Hanna-Hinn/Ticketbox/pull/3)
 **ADR:** none — nothing here is a Redis/Postgres mechanism decision in the sense `CLAUDE.md` §6.12 means. The real findings below are operational/Docker gotchas, and the task doc is their right home.
 
 ---
