@@ -1,0 +1,52 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-ticketbox}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-ticketbox}
+      POSTGRES_DB: ${POSTGRES_DB:-ticketbox}
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-ticketbox} -d ${POSTGRES_DB:-ticketbox}"]
+      interval: 2s
+      timeout: 3s
+      retries: 15
+
+  redis:
+    image: redis:7-alpine
+    # --appendonly no is explicit, not just the default, so TB-040 has an
+    # obvious place to find and change it when persistence becomes the point.
+    command: ["redis-server", "--appendonly", "no"]
+    ports:
+      - "6379:6379"
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 2s
+      timeout: 3s
+      retries: 15
+
+  redisinsight:
+    image: redis/redisinsight:latest
+    ports:
+      - "5540:5540"
+    depends_on:
+      redis:
+        condition: service_healthy
+    healthcheck:
+      # 127.0.0.1, not localhost: this image's /etc/hosts resolves localhost
+      # to ::1 first, but the app only binds IPv4 (0.0.0.0) — localhost
+      # fails here even though the exact same request from outside the
+      # container works fine through Docker's port mapping.
+      test: ["CMD", "wget", "--spider", "-q", "http://127.0.0.1:5540"]
+      interval: 2s
+      timeout: 3s
+      retries: 15
+
+volumes:
+  pgdata:
+  redisdata:
