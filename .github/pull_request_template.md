@@ -23,10 +23,14 @@ Closes: TB-NNN
 <!-- CLAUDE.md: "A PR without an approved plan, a clean code review, and a task
      doc is not ready, whatever CI says." Check off only what's actually true. -->
 
-- [ ] **Plan approved** — [`docs/implementation-plans/TB-NNN-slug.md`](docs/implementation-plans/)
+- [ ] **Plan approved** — [`docs/implementation-plans/TB-NNN-slug.md`](https://github.com/Hanna-Hinn/Ticketbox/blob/HEAD/docs/implementation-plans/)
 - [ ] **Code review clean** — `engineering-code-reviewer` verdict: SAFE TO MERGE (fix → re-review if it wasn't on the first pass)
 - [ ] **Tests** — every level `docs/02-product-delivery-plan.md`'s Tests line names for this task, each one proven able to fail before being trusted
-- [ ] **Task doc** — [`docs/tasks/TB-NNN-slug.md`](docs/tasks/), including an honest "where this diverged from the plan"
+- [ ] **Task doc** — [`docs/tasks/TB-NNN-slug.md`](https://github.com/Hanna-Hinn/Ticketbox/blob/HEAD/docs/tasks/), including an honest "where this diverged from the plan"
+
+<!-- Absolute links, not relative — a template rendered as a PR body sits at
+     /pull/N, not at .github/'s own location, so a relative path resolves
+     against the wrong base and 404s. Verified directly before shipping this. -->
 
 ## Tests
 
