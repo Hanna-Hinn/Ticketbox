@@ -110,6 +110,8 @@ HTTP 200
 
 Findings deliberately not fixed: none.
 
+**One finding regressed after the re-review confirmed it fixed, caught only by re-verifying the pushed state rather than trusting the earlier check.** Wrapping up Phase 5, a `git reset` before the final commits (unstaging to recombine files into cleaner commit groups) was followed by a plain `git add scripts/dev-up.sh` — which silently re-lost the executable bit, because `core.filemode=false` means `git add` never reads the working-tree permission bit at all; only the explicit `git update-index --chmod=+x` sets it, and that fix doesn't survive a reset. The feat commit that reached the remote branch had the bug back. Caught by re-running `git ls-files -s` after pushing rather than assuming the earlier fix still held, fixed with a follow-up commit, verified `100755` both in the index before committing and via `git show --stat` after. The exact bug the code review caught once already recurred, mechanically, in the documentation phase of the same task — a fairly direct demonstration of why "verify the actual state, don't trust that a fix made ten minutes ago is still there" has to apply to the implementer's own git operations, not just to test output.
+
 ---
 
 ## 6. Failure modes, as built
