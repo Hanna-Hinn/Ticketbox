@@ -8,10 +8,10 @@ This is a **learning project**, not a product. Nothing is deployed. The goal is 
 
 ## The two documents that govern this repo
 
-| Document | What it decides |
-|---|---|
-| [docs/01-tech-lead-architecture-and-standards.md](docs/01-tech-lead-architecture-and-standards.md) | Architecture, layers, testing strategy, code standards, Redis/Postgres mechanics |
-| [docs/02-product-delivery-plan.md](docs/02-product-delivery-plan.md) | What to build, in what order, as 42 PR-sized tasks (TB-001…TB-042) across 10 stages |
+| Document                                                                                           | What it decides                                                                     |
+| -------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------- |
+| [docs/01-tech-lead-architecture-and-standards.md](docs/01-tech-lead-architecture-and-standards.md) | Architecture, layers, testing strategy, code standards, Redis/Postgres mechanics    |
+| [docs/02-product-delivery-plan.md](docs/02-product-delivery-plan.md)                               | What to build, in what order, as 42 PR-sized tasks (TB-001…TB-042) across 10 stages |
 
 **These two documents outrank this file.** If anything here contradicts them, they win and this file is the bug. Read Part 1 and Part 2 of the handbook before touching code.
 
@@ -25,7 +25,7 @@ If anything is missing, ambiguous, contradictory, or unclear:
 2. **Ask targeted questions** before acting
 3. **Do not guess, invent, or fabricate**
 
-Never invent a Redis command's semantics, a Postgres locking behaviour, or an `ioredis` API from memory. This project is *about* those semantics — getting one subtly wrong defeats the entire point. Check the docs, or say you're unsure.
+Never invent a Redis command's semantics, a Postgres locking behaviour, or an `ioredis` API from memory. This project is _about_ those semantics — getting one subtly wrong defeats the entire point. Check the docs, or say you're unsure.
 
 ---
 
@@ -34,23 +34,27 @@ Never invent a Redis command's semantics, a Postgres locking behaviour, or an `i
 The full skill lives at [.claude/skills/karpathy-guidelines/SKILL.md](.claude/skills/karpathy-guidelines/SKILL.md). The short version applies to every task:
 
 ### 1. Think Before Coding
+
 - State assumptions explicitly. If uncertain, **ask**.
 - If multiple interpretations exist, present them — don't pick silently.
 - If a simpler approach exists, say so and push back.
 
 ### 2. Simplicity First
+
 - Write the minimum code that solves the problem. Nothing speculative.
 - No features beyond what the task's **Scope** line asks for.
 - No abstractions for single-use code. No configurability nobody requested.
 - If 200 lines could be 50, rewrite it.
 
 ### 3. Surgical Changes
+
 - Touch only what you must. Clean up only your own mess.
 - Don't "improve" adjacent code or formatting that wasn't part of the request.
 - Match existing style, even if you'd do it differently.
 - If you notice unrelated dead code, **mention it — don't delete it**.
 
 ### 4. Goal-Driven Execution
+
 - Define success criteria before starting. Loop until verified.
 - "Fix the bug" → "Write a test that reproduces it, then make it pass."
 
@@ -153,7 +157,7 @@ One task = one branch = one PR = one squash merge
 feat/TB-022-lua-create-hold
 ```
 
-**A task is not done** until all five phases are complete, CI is green, *and* the tests the plan lists exist and pass. Not "should pass" — pass, with output you have actually seen.
+**A task is not done** until all five phases are complete, CI is green, _and_ the tests the plan lists exist and pass. Not "should pass" — pass, with output you have actually seen.
 
 Run `testing-reality-checker` before the merge. It defaults to NEEDS WORK and verifies against the Acceptance line with commands it runs itself.
 
@@ -161,7 +165,7 @@ Run `testing-reality-checker` before the merge. It defaults to NEEDS WORK and ve
 
 Tasks marked **SPIKE** (TB-019a, TB-021, TB-028) are throwaway experiments. **They are not merged.** Their only deliverable is a written entry in [docs/NOTES.md](docs/NOTES.md): what you did, what you expected, what actually happened, what it changed about how you think.
 
-Do not "helpfully" turn a spike into merged code. TB-021's job is to *produce* a race condition and watch it oversell. Fixing it there destroys the lesson TB-022 exists to teach.
+Do not "helpfully" turn a spike into merged code. TB-021's job is to _produce_ a race condition and watch it oversell. Fixing it there destroys the lesson TB-022 exists to teach.
 
 **Their workflow is shortened**: Phase 1 (a short plan — what you'll try and what you expect to happen), Phase 2 (run the experiment), Phase 5 (the NOTES.md write-up). No code review, no tests, no task doc, no merge.
 
@@ -178,12 +182,12 @@ L2  Use Cases              CreateHold · ConfirmOrder · ReleaseExpiredHolds · 
 L1  Entities               Event · TicketTier · Hold · Order · Money · Quantity
 ```
 
-| Layer | Directory | May import |
-|---|---|---|
-| L1 | `packages/api/src/domain/**` | `domain/**` only — **nothing else, ever** |
-| L2 | `packages/api/src/application/**` | `domain/**`, `application/**`. **Never** `ioredis`, `pg`, `fastify` |
-| L3 | `packages/api/src/infrastructure/**`, `presentation/**` | inward only — **never each other** |
-| L4 | `packages/api/src/main/**`, `worker/**` | anything (this is where wiring lives) |
+| Layer | Directory                                               | May import                                                          |
+| ----- | ------------------------------------------------------- | ------------------------------------------------------------------- |
+| L1    | `packages/api/src/domain/**`                            | `domain/**` only — **nothing else, ever**                           |
+| L2    | `packages/api/src/application/**`                       | `domain/**`, `application/**`. **Never** `ioredis`, `pg`, `fastify` |
+| L3    | `packages/api/src/infrastructure/**`, `presentation/**` | inward only — **never each other**                                  |
+| L4    | `packages/api/src/main/**`, `worker/**`                 | anything (this is where wiring lives)                               |
 
 **Only `main/composition.ts` may `new` a concrete adapter.** That file is the map of the system; it should read top to bottom.
 
@@ -206,15 +210,15 @@ These boundaries are enforced by ESLint and **fail CI when broken** (TB-009). If
 
 9. **All Redis keys come from the key registry** (`infrastructure/redis/keys.ts`). A string-literal key anywhere else is a review rejection.
 10. **Every Lua script is a named module** in `scripts/lua/`, with a typed wrapper and an integration test. **Never inline Lua in a method body.**
-11. **Every Lua script gets a header comment explaining the race condition it prevents.** That is the highest-value comment in this codebase. Comment the *why*, never the *what*.
-12. **Keep scripts short and loop-free.** A Lua script blocks the whole server for its duration — the blocking *is* the atomicity guarantee. Redis won't kill an over-running script; it replies `BUSY` (`busy-reply-threshold`, default 5000ms).
+11. **Every Lua script gets a header comment explaining the race condition it prevents.** That is the highest-value comment in this codebase. Comment the _why_, never the _what_.
+12. **Keep scripts short and loop-free.** A Lua script blocks the whole server for its duration — the blocking _is_ the atomicity guarantee. Redis won't kill an over-running script; it replies `BUSY` (`busy-reply-threshold`, default 5000ms).
 
 Traps this project exists to teach — do not fall into them while writing the code that demonstrates them:
 
 - A sequence of commands from the app is **not** atomic, even though each command is. A round trip sits between them.
 - `SET k v` (no `EX`) on an existing key **clears its TTL** and silently makes it immortal. `INCR`/`HSET`/`LPUSH` leave the TTL alone.
 - Releasing a lock with `DEL` instead of a compare-and-delete script can release someone else's lock.
-- Expiry is not a reliably observable event. TTL guarantees *visibility*, not the instant of freeing. Something must still reconcile.
+- Expiry is not a reliably observable event. TTL guarantees _visibility_, not the instant of freeing. Something must still reconcile.
 - Under `allkeys-lru`, eviction can delete a lock, a hold, or an inventory counter you rely on for correctness.
 
 **Before adding any Redis feature, ask out loud: "Could Postgres already do this?"** (handbook §7.3). Being able to argue both sides is the actual deliverable. If Postgres is the better answer and we're using Redis anyway to learn it, say so explicitly in the ADR.
@@ -248,14 +252,14 @@ Traps this project exists to teach — do not fall into them while writing the c
 
 ## Testing
 
-Four levels, distinguished by *what is real and what is faked*.
+Four levels, distinguished by _what is real and what is faked_.
 
-| Level | Real | Faked | Speed | Share |
-|---|---|---|---|---|
-| **Unit** | your business logic (L1+L2) | every port | <2s, no Docker | ~60% |
-| **Integration** | one adapter + one real engine | everything else | <30s | ~30% |
-| **Smoke** | the running system | nothing | <10s | ~6 tests, forever |
-| **E2E** | browser → API → both DBs → worker | nothing | minutes | 5 specs |
+| Level           | Real                              | Faked           | Speed          | Share             |
+| --------------- | --------------------------------- | --------------- | -------------- | ----------------- |
+| **Unit**        | your business logic (L1+L2)       | every port      | <2s, no Docker | ~60%              |
+| **Integration** | one adapter + one real engine     | everything else | <30s           | ~30%              |
+| **Smoke**       | the running system                | nothing         | <10s           | ~6 tests, forever |
+| **E2E**         | browser → API → both DBs → worker | nothing         | minutes        | 5 specs           |
 
 ```bash
 pnpm test:unit          # no docker needed, run on every save
@@ -287,13 +291,13 @@ If you find yourself with 40 E2E tests, something has gone wrong — a rule that
 
 Five artefacts. Two of them are produced by the workflow above and are **not optional**.
 
-| Artefact | When | Where | Template |
-|---|---|---|---|
-| **Implementation plan** | **Phase 1 of every task** — approved before coding starts | `docs/implementation-plans/TB-NNN-slug.md` | [`0000-template.md`](docs/implementation-plans/0000-template.md) |
-| **Task doc** | **Phase 5 of every task** — written after, from what actually happened | `docs/tasks/TB-NNN-slug.md` | [`0000-template.md`](docs/tasks/0000-template.md) |
-| **ADR** (~1 page) | every real decision: why Lua over `WATCH`, why cache-aside over write-through, why Streams over `SKIP LOCKED` | `docs/adr/NNNN-title.md` | [`0000-template.md`](docs/adr/0000-template.md) |
-| **Benchmark entry** | every optimization — measured numbers, reproducible command, before *and* after | [docs/BENCHMARKS.md](docs/BENCHMARKS.md) | — |
-| **Spike write-up** | every SPIKE task | [docs/NOTES.md](docs/NOTES.md) | in-file |
+| Artefact                | When                                                                                                          | Where                                      | Template                                                         |
+| ----------------------- | ------------------------------------------------------------------------------------------------------------- | ------------------------------------------ | ---------------------------------------------------------------- |
+| **Implementation plan** | **Phase 1 of every task** — approved before coding starts                                                     | `docs/implementation-plans/TB-NNN-slug.md` | [`0000-template.md`](docs/implementation-plans/0000-template.md) |
+| **Task doc**            | **Phase 5 of every task** — written after, from what actually happened                                        | `docs/tasks/TB-NNN-slug.md`                | [`0000-template.md`](docs/tasks/0000-template.md)                |
+| **ADR** (~1 page)       | every real decision: why Lua over `WATCH`, why cache-aside over write-through, why Streams over `SKIP LOCKED` | `docs/adr/NNNN-title.md`                   | [`0000-template.md`](docs/adr/0000-template.md)                  |
+| **Benchmark entry**     | every optimization — measured numbers, reproducible command, before _and_ after                               | [docs/BENCHMARKS.md](docs/BENCHMARKS.md)   | —                                                                |
+| **Spike write-up**      | every SPIKE task                                                                                              | [docs/NOTES.md](docs/NOTES.md)             | in-file                                                          |
 
 The plan and the task doc are named after the task and share its slug with the branch, so `feat/TB-022-lua-create-hold` has `implementation-plans/TB-022-lua-create-hold.md` and `tasks/TB-022-lua-create-hold.md`. Three files, one name.
 
@@ -302,7 +306,7 @@ The plan and the task doc are named after the task and share its slug with the b
 Rules:
 
 - **Measured, not estimated.** A BENCHMARKS row without a command that reproduces it is worthless. Never write a number you did not observe.
-- ADRs are the most valuable artefact here — in six months they're what actually gets reread. Write the alternative you rejected and *why*, not just the choice.
+- ADRs are the most valuable artefact here — in six months they're what actually gets reread. Write the alternative you rejected and _why_, not just the choice.
 - Diagrams are welcome where they clarify a race condition, a layer trace, or a message flow. Use Mermaid. They are **not** mandated per response — a diagram that restates the code adds noise.
 - Update `README.md` and the delivery plan's progress tracker when a stage completes.
 
@@ -321,11 +325,11 @@ CI order (GitHub Actions, every PR):
 
 Coverage gates — a floor, not a goal:
 
-| Path | Line coverage |
-|---|---|
+| Path                          | Line coverage                               |
+| ----------------------------- | ------------------------------------------- |
 | `domain/**`, `application/**` | **90%** — these are pure, there's no excuse |
-| `infrastructure/**` | 70% |
-| Global | 80% — CI fails below |
+| `infrastructure/**`           | 70%                                         |
+| Global                        | 80% — CI fails below                        |
 
 A 100%-covered use case with no concurrency test is not tested.
 
@@ -358,20 +362,20 @@ Twelve agents in [.claude/agents/](.claude/agents/), each written for this stack
 
 **Mapped onto the workflow:**
 
-| Phase | Agent | Role |
-|---|---|---|
-| 1 · Planning | `engineering-backend-architect` | Port design, Redis/Postgres split, key registry, Lua contracts, schema, ADR content |
-| 2 · Coding | `engineering-senior-developer` | `packages/api` — entities, use cases, adapters, wiring |
-| 2 · Coding | `engineering-frontend-developer` | `packages/web` — screens, countdown, SSE, typed client |
-| 2 · Coding | `engineering-devops-automator` | Docker Compose, migration runner, GitHub Actions, TB-040 ops experiments |
-| **3 · Code review** | **`engineering-code-reviewer`** | **The Phase 3 gate. Correctness, SOLID, DRY, complexity, readability + Karpathy anti-slop. Never compliments code** |
-| 3 · Code review | `engineering-security-engineer` | Write-path abuse, idempotency, locking, rate limiting, log hygiene |
-| 4 · Tests | `testing-api-tester` | Integration tests, the six smoke tests, concurrency tests |
-| 4 · Tests | `testing-test-results-analyzer` | Pyramid ratios, coverage gates, flake, missing concurrency coverage |
-| 4 · Tests | `testing-performance-benchmarker` | Before/after measurement for BENCHMARKS.md |
-| 5 · Documentation | `engineering-technical-writer` | Implementation plan updates, task docs, ADRs, BENCHMARKS, NOTES |
-| Before merge | `testing-reality-checker` | Defaults to NEEDS WORK, verifies against the Acceptance line with commands it runs itself |
-| All phases | `agents-orchestrator` | Drives one TB task through all five phases and enforces the gates |
+| Phase               | Agent                             | Role                                                                                                                |
+| ------------------- | --------------------------------- | ------------------------------------------------------------------------------------------------------------------- |
+| 1 · Planning        | `engineering-backend-architect`   | Port design, Redis/Postgres split, key registry, Lua contracts, schema, ADR content                                 |
+| 2 · Coding          | `engineering-senior-developer`    | `packages/api` — entities, use cases, adapters, wiring                                                              |
+| 2 · Coding          | `engineering-frontend-developer`  | `packages/web` — screens, countdown, SSE, typed client                                                              |
+| 2 · Coding          | `engineering-devops-automator`    | Docker Compose, migration runner, GitHub Actions, TB-040 ops experiments                                            |
+| **3 · Code review** | **`engineering-code-reviewer`**   | **The Phase 3 gate. Correctness, SOLID, DRY, complexity, readability + Karpathy anti-slop. Never compliments code** |
+| 3 · Code review     | `engineering-security-engineer`   | Write-path abuse, idempotency, locking, rate limiting, log hygiene                                                  |
+| 4 · Tests           | `testing-api-tester`              | Integration tests, the six smoke tests, concurrency tests                                                           |
+| 4 · Tests           | `testing-test-results-analyzer`   | Pyramid ratios, coverage gates, flake, missing concurrency coverage                                                 |
+| 4 · Tests           | `testing-performance-benchmarker` | Before/after measurement for BENCHMARKS.md                                                                          |
+| 5 · Documentation   | `engineering-technical-writer`    | Implementation plan updates, task docs, ADRs, BENCHMARKS, NOTES                                                     |
+| Before merge        | `testing-reality-checker`         | Defaults to NEEDS WORK, verifies against the Acceptance line with commands it runs itself                           |
+| All phases          | `agents-orchestrator`             | Drives one TB task through all five phases and enforces the gates                                                   |
 
 Three things every one of them enforces: **the task's Scope line is the boundary**, **a task is done when its tests have been observed passing** — not when they should pass — and **no phase is skipped**.
 
@@ -382,7 +386,10 @@ Three things every one of them enforces: **the task's Scope line is the boundary
 ## Local commands
 
 ```bash
-docker compose up -d       # postgres:16 · redis:7 · redisinsight
+./scripts/dev-up.sh        # postgres:16 · redis:7 · redisinsight — one command, verifies all three
+# Windows: .\scripts\dev-up.ps1
+# or, the primitive underneath: docker compose up -d --wait
+
 pnpm install
 pnpm migrate               # idempotent
 pnpm seed                  # 3 events, 3 tiers each, one deliberately sold out

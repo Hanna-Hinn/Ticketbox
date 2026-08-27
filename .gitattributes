@@ -1,0 +1,4 @@
+# scripts/dev-up.sh's shebang needs LF, not CRLF (`#!/usr/bin/env bash\r` is
+# a "bad interpreter" error in Git Bash) — this repo's core.autocrlf=true
+# on Windows would otherwise convert it on the next checkout/renormalize.
+*.sh text eol=lf
