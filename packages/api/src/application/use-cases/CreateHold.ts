@@ -55,11 +55,18 @@ export class CreateHoldUseCase {
     if (!reserved.ok) return { ok: false, reason: "insufficient" };
 
     // The row follows the decision, never leads it (ADR 0004): a row written
-    // first would record holds the store then refuses. If this write fails
-    // the hold still exists, with no row; the TTL bounds it and the sweeper
-    // restores it. No compensating release — a second write to undo the
-    // first, in the same request, can fail too.
-    await this.mirror.save(hold);
+    // first would record holds the store then refuses. If the row cannot be
+    // written, give the tickets back now, on the store that answered a
+    // moment ago: left alone, every retry while Postgres is down would lock
+    // another qty for the whole TTL. If the release fails too, nothing is
+    // worse than before — the hold expires — and the caller hears about the
+    // first failure, not the second.
+    try {
+      await this.mirror.save(hold);
+    } catch (err: unknown) {
+      await this.holds.release(hold.token).catch(() => undefined);
+      throw err;
+    }
 
     return { ok: true, token, expiresAt: hold.expiresAt, remaining: reserved.remaining };
   }

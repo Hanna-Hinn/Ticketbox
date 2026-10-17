@@ -31,10 +31,10 @@ let client: pg.Client;
 let repo: PgHoldRepository;
 let events: PgEventRepository;
 
-function held(qty = 2, token = TOKEN): Hold {
+function held(qty = 2): Hold {
   return aHold()
     .forTier(GENERAL)
-    .withToken(token)
+    .withToken(TOKEN)
     .withQty(qty)
     .createdAt("2026-01-01T10:00:00.123Z")
     .withTtl(120_000)
@@ -93,6 +93,25 @@ describe("PgHoldRepository", () => {
     await repo.setStatus(TOKEN, "expired");
 
     expect(afterRelease).toBe("released");
+    expect((await rowOf(TOKEN))?.status).toBe("released");
+  });
+
+  it("keeps the first outcome in the other direction too: expired stays expired", async () => {
+    await repo.save(held());
+
+    await repo.setStatus(TOKEN, "expired");
+    await repo.setStatus(TOKEN, "released");
+
+    expect((await rowOf(TOKEN))?.status).toBe("expired");
+  });
+
+  it("accepts the same outcome twice without complaint", async () => {
+    // The sweeper and a retried release will both do this.
+    await repo.save(held());
+
+    await repo.setStatus(TOKEN, "released");
+    await expect(repo.setStatus(TOKEN, "released")).resolves.toBeUndefined();
+
     expect((await rowOf(TOKEN))?.status).toBe("released");
   });
 

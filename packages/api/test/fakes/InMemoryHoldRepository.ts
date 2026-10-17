@@ -10,7 +10,7 @@ import type { HoldToken } from "../../src/domain/value-objects/HoldToken.js";
 // token is saved once (the primary key), and a row only ever leaves
 // 'active' (the first outcome is kept).
 export class InMemoryHoldRepository implements HoldRepository {
-  readonly rows = new Map<HoldToken, { hold: Hold; status: HoldStatus }>();
+  private readonly rows = new Map<HoldToken, { hold: Hold; status: HoldStatus }>();
 
   async save(hold: Hold): Promise<void> {
     if (this.rows.has(hold.token)) throw new Error(`hold ${hold.token} already mirrored`);
@@ -25,5 +25,13 @@ export class InMemoryHoldRepository implements HoldRepository {
 
   statusOf(token: HoldToken): HoldStatus | undefined {
     return this.rows.get(token)?.status;
+  }
+
+  saved(token: HoldToken): Hold | undefined {
+    return this.rows.get(token)?.hold;
+  }
+
+  get size(): number {
+    return this.rows.size;
   }
 }

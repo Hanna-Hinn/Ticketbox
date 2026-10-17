@@ -26,9 +26,9 @@ export class PgHoldRepository implements HoldRepository {
     // sweeper marking a released hold expired (or the reverse) changes
     // nothing. Matching no row at all is not an error at this port — a
     // hold whose save failed has no row to mark.
-    await this.db.query(`UPDATE holds SET status = $2 WHERE token = $1 AND status = 'active'`, [
-      token,
+    await this.db.query(`UPDATE holds SET status = $1 WHERE token = $2 AND status = 'active'`, [
       status,
+      token,
     ]);
   }
 }

@@ -101,7 +101,7 @@ describe("CreateHoldUseCase", () => {
 
     expect(result).toEqual({ ok: false, reason: "insufficient" });
     expect(await holds.availability([TIER])).toEqual(new Map([[TIER, 1]]));
-    expect(mirror.rows.size).toBe(0);
+    expect(mirror.size).toBe(0);
   });
 
   it("mirrors the hold it reserved as an active row, after the store has decided", async () => {
@@ -109,11 +109,11 @@ describe("CreateHoldUseCase", () => {
 
     await useCase.execute(request);
 
-    const row = mirror.rows.get(holdToken("tok-1"));
-    expect(row?.status).toBe("active");
-    expect(row?.hold.tierId).toBe(TIER);
-    expect(row?.hold.qty.value).toBe(2);
-    expect(row?.hold.expiresAt).toEqual(new Date("2026-01-01T10:02:00.000Z"));
+    const saved = mirror.saved(holdToken("tok-1"));
+    expect(mirror.statusOf(holdToken("tok-1"))).toBe("active");
+    expect(saved?.tierId).toBe(TIER);
+    expect(saved?.qty.value).toBe(2);
+    expect(saved?.expiresAt).toEqual(new Date("2026-01-01T10:02:00.000Z"));
   });
 
   it("asks the store before it writes the row, never the other way round", async () => {
@@ -151,6 +151,63 @@ describe("CreateHoldUseCase", () => {
     await useCase.execute(request);
 
     expect(calls).toEqual(["reserve", "save"]);
+  });
+
+  it("gives the tickets back when the row cannot be written, and reports that failure", async () => {
+    // Left alone, every retry while Postgres is down would lock another qty
+    // for the whole TTL (ADR 0004).
+    const clock = new FakeClock("2026-01-01T10:00:00.000Z");
+    const events = new InMemoryEventRepository([
+      anEvent()
+        .withTiers([aTier().withRemaining(10).build()])
+        .build(),
+    ]);
+    const holds = new InMemoryHoldStore(clock);
+    holds.seed(TIER, 10);
+    const brokenMirror = {
+      save: () => Promise.reject(new Error("postgres is down")),
+      setStatus: () => Promise.reject(new Error("postgres is down")),
+    };
+    const useCase = new CreateHoldUseCase(
+      events,
+      holds,
+      brokenMirror,
+      clock,
+      new FixedTokenGenerator(["tok-1"]),
+      TTL_MS,
+    );
+
+    await expect(useCase.execute(request)).rejects.toThrow("postgres is down");
+
+    expect(await holds.availability([TIER])).toEqual(new Map([[TIER, 10]]));
+    expect(await holds.find(holdToken("tok-1"))).toBeNull();
+  });
+
+  it("still reports the row's failure when the compensating release fails too", async () => {
+    const clock = new FakeClock("2026-01-01T10:00:00.000Z");
+    const events = new InMemoryEventRepository([
+      anEvent()
+        .withTiers([aTier().withRemaining(10).build()])
+        .build(),
+    ]);
+    const store = stubHoldStore({
+      reserve: async () => ({ ok: true, remaining: 8 }),
+      release: () => Promise.reject(new Error("redis went away")),
+    });
+    const brokenMirror = {
+      save: () => Promise.reject(new Error("postgres is down")),
+      setStatus: () => Promise.reject(new Error("postgres is down")),
+    };
+    const useCase = new CreateHoldUseCase(
+      events,
+      store,
+      brokenMirror,
+      clock,
+      new FixedTokenGenerator(["tok-1"]),
+      TTL_MS,
+    );
+
+    await expect(useCase.execute(request)).rejects.toThrow("postgres is down");
   });
 
   it("allows a hold for exactly the remaining inventory, leaving zero", async () => {
@@ -196,7 +253,7 @@ describe("CreateHoldUseCase", () => {
     await expect(useCase.execute({ ...request, qty })).rejects.toThrow(InvalidQuantity);
 
     expect(await holds.availability([TIER])).toEqual(new Map([[TIER, 10]]));
-    expect(mirror.rows.size).toBe(0);
+    expect(mirror.size).toBe(0);
   });
 
   it("rejects a misconfigured ttl without reserving anything", async () => {

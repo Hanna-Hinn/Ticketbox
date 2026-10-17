@@ -71,7 +71,12 @@ describe("a hold, in both stores", () => {
     );
     const release = new ReleaseHoldUseCase(store, mirror);
 
+    const events = new PgEventRepository(db);
+    const computed = async (): Promise<number | undefined> =>
+      (await events.findById(JAZZ))?.tiers.find((tier) => tier.id === GENERAL)?.remaining;
+
     const created = await create.execute({ eventId: JAZZ, tierId: GENERAL, qty: 2 });
+    const computedWhileHeld = await computed();
     const live = await store.find(TOKEN);
     const row = await db.query<{ status: string }>("SELECT status FROM holds WHERE token = $1", [
       TOKEN,
@@ -85,25 +90,11 @@ describe("a hold, in both stores", () => {
     expect(created).toEqual(expect.objectContaining({ ok: true, token: TOKEN, remaining: 998 }));
     expect(live?.qty.value).toBe(2);
     expect(row.rows[0]?.status).toBe("active");
+    // The two stores agree on the number, not only the status.
+    expect(computedWhileHeld).toBe(998);
     expect(released).toEqual({ released: true, tierId: GENERAL, remaining: 1000 });
     expect(await store.find(TOKEN)).toBeNull();
     expect(rowAfter.rows[0]?.status).toBe("released");
-  });
-
-  it("writes no row when the store refuses", async () => {
-    await redis.hset(keys.tier(GENERAL), "remaining", 1);
-    const create = new CreateHoldUseCase(
-      new PgEventRepository(db),
-      store,
-      mirror,
-      new FakeClock("2026-01-01T10:00:00.000Z"),
-      new FixedTokenGenerator([TOKEN]),
-      120_000,
-    );
-
-    const result = await create.execute({ eventId: JAZZ, tierId: GENERAL, qty: 2 });
-
-    expect(result).toEqual({ ok: false, reason: "insufficient" });
-    expect((await db.query("SELECT 1 FROM holds WHERE token = $1", [TOKEN])).rowCount).toBe(0);
+    expect(await computed()).toBe(1000);
   });
 });

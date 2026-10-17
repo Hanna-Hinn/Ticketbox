@@ -109,6 +109,41 @@ describe("ReleaseHoldUseCase", () => {
     expect(mirror.statusOf(TOKEN)).toBe("released");
   });
 
+  it("reports a row that could not be marked, with the tickets already back", async () => {
+    // The truth moved before the record failed: the caller gets the error,
+    // and a retry answers released: false (ADR 0004).
+    const clock = new FakeClock("2026-01-01T10:00:00.000Z");
+    const holds = new InMemoryHoldStore(clock);
+    holds.seed(TIER, 10);
+    await holds.reserve(
+      aHold().forTier(TIER).withToken(TOKEN).withQty(4).createdAt(clock.now()).build(),
+    );
+    const brokenMirror = {
+      save: () => Promise.reject(new Error("postgres is down")),
+      setStatus: () => Promise.reject(new Error("postgres is down")),
+    };
+
+    await expect(
+      new ReleaseHoldUseCase(holds, brokenMirror).execute({ token: TOKEN }),
+    ).rejects.toThrow("postgres is down");
+
+    expect(await holds.availability([TIER])).toEqual(new Map([[TIER, 10]]));
+  });
+
+  it("never touches the row when the store had nothing to release, even an unreachable one", async () => {
+    const store = stubHoldStore({ release: async () => ({ released: false }) });
+    const unreachableMirror = {
+      save: () => Promise.reject(new Error("must not be called")),
+      setStatus: () => Promise.reject(new Error("must not be called")),
+    };
+
+    const result = await new ReleaseHoldUseCase(store, unreachableMirror).execute({
+      token: TOKEN,
+    });
+
+    expect(result).toEqual({ released: false });
+  });
+
   it("leaves the row alone when there was nothing to release", async () => {
     const { useCase, mirror, clock } = await world();
 
