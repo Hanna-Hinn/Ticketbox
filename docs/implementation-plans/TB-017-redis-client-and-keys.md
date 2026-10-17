@@ -1,6 +1,6 @@
 # TB-017 — Redis client and key registry
 
-**Status:** Approved
+**Status:** Implemented — see [`docs/tasks/TB-017-redis-client-and-keys.md`](../tasks/TB-017-redis-client-and-keys.md) §3 for where reality diverged
 **Date:** 2026-10-17
 **Task:** TB-017 (`docs/02-product-delivery-plan.md`)
 **Branch:** `feat/TB-017-redis-client-and-keys` (stacked on `feat/TB-016-first-e2e`)
