@@ -1,3 +1,4 @@
+import { once } from "node:events";
 import type { Redis } from "ioredis";
 import pino from "pino";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
@@ -6,14 +7,10 @@ import { connectToTestRedis, testRedisUrl } from "../support/redis.js";
 
 // A logger whose output the test can read: the lifecycle lines are the
 // deliverable, not a side effect.
-function capturingLogger(): { log: pino.Logger; lines: () => string[] } {
-  const chunks: string[] = [];
-  const log = pino({ level: "info" }, { write: (chunk: string) => void chunks.push(chunk) });
-  return { log, lines: () => chunks };
-}
-
-function once(client: Redis, event: string): Promise<void> {
-  return new Promise((resolve) => client.once(event, () => resolve()));
+function capturingLogger(): { log: pino.Logger; lines: string[] } {
+  const lines: string[] = [];
+  const log = pino({ level: "info" }, { write: (chunk: string) => void lines.push(chunk) });
+  return { log, lines };
 }
 
 let admin: Redis;
@@ -34,7 +31,8 @@ describe("createRedisClient", () => {
   let client: Redis;
 
   afterEach(async () => {
-    await client.quit().catch(() => undefined);
+    // The dead-port test disconnects its own client; quit() after that rejects.
+    if (client.status !== "end") await client.quit();
   });
 
   it("connects and answers a ping", async () => {
@@ -54,9 +52,12 @@ describe("createRedisClient", () => {
   });
 
   it("starts each test with an empty database", async () => {
+    await admin.set("left-over", "from an earlier test");
     client = createRedisClient(testRedisUrl(), pino({ level: "silent" }));
 
-    expect(await client.get("probe")).toBeNull();
+    await admin.flushdb();
+
+    expect(await client.get("left-over")).toBeNull();
   });
 
   it("survives its connection being killed: logs, reconnects, and answers again", async () => {
@@ -71,12 +72,14 @@ describe("createRedisClient", () => {
     await readyAgain;
 
     expect(await client.ping()).toBe("PONG");
-    expect(lines().join("")).toContain("redis reconnecting");
-    expect(lines().join("")).toContain("redis ready");
+    expect(lines.filter((line) => line.includes("redis reconnecting"))).toHaveLength(1);
+    expect(lines.filter((line) => line.includes("redis ready"))).toHaveLength(2);
   });
 
-  it("logs a connection error instead of crashing the process", async () => {
+  it("logs a connection error, structured and without the command's arguments", async () => {
     const { log, lines } = capturingLogger();
+    // A closed port on the same host; a filtered one would hit ioredis's
+    // 10 s connectTimeout instead and this test would time out.
     const dead = new URL(testRedisUrl());
     dead.port = "6390";
     client = createRedisClient(dead.toString(), log);
@@ -84,7 +87,8 @@ describe("createRedisClient", () => {
     await once(client, "error");
     client.disconnect();
 
-    expect(lines().join("")).toContain("redis error");
-    expect(lines().join("")).toContain("ECONNREFUSED");
+    const errorLine = lines.find((line) => line.includes("redis error"));
+    expect(errorLine).toContain("ECONNREFUSED");
+    expect(errorLine).not.toContain('"command"');
   });
 });
