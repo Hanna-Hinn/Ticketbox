@@ -87,20 +87,20 @@ None.
 
 ## 4. Files
 
-| File                                                                        | New / Changed | Why                                                                   |
-| --------------------------------------------------------------------------- | ------------- | --------------------------------------------------------------------- |
-| `packages/api/src/application/ports/HoldStore.ts`                           | Changed       | `find(token)`                                                         |
-| `packages/api/src/application/use-cases/GetHold.ts`                         | New           | decision 3                                                            |
-| `packages/api/src/application/use-cases/ReleaseHold.ts`                     | New           | decision 4                                                            |
-| `packages/api/src/main/composition.ts`                                      | Changed       | `UnconfiguredHoldStore.find` throws like its siblings (the port grew) |
-| `packages/api/test/fakes/InMemoryHoldStore.ts`                              | Changed       | clock, expiry, `find` (decisions 5, 6)                                |
-| `packages/api/test/unit/application/use-cases/GetHold.test.ts`              | New           |                                                                       |
-| `packages/api/test/unit/application/use-cases/ReleaseHold.test.ts`          | New           |                                                                       |
-| `packages/api/test/unit/fakes/fakes.test.ts`                                | Changed       | the fake's expiry semantics are part of the contract it pins          |
-| `packages/api/test/unit/application/use-cases/CreateHold.test.ts`           | Changed       | the world passes its clock to the store                               |
-| `packages/api/test/unit/application/use-cases/GetEventAvailability.test.ts` | Changed       | same, one line                                                        |
-| `packages/api/test/integration/http/{health,events,errors}.test.ts`         | Changed       | same, one line each                                                   |
-| `docs/tasks/TB-008-use-cases-and-fakes.md`                                  | Changed       | tick the two follow-ups this task closes                              |
+| File                                                                        | New / Changed | Why                                                                                                                                       |
+| --------------------------------------------------------------------------- | ------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
+| `packages/api/src/application/ports/HoldStore.ts`                           | Changed       | `find(token)`                                                                                                                             |
+| `packages/api/src/application/use-cases/GetHold.ts`                         | New           | decision 3                                                                                                                                |
+| `packages/api/src/application/use-cases/ReleaseHold.ts`                     | New           | decision 4                                                                                                                                |
+| `packages/api/src/infrastructure/system/UnconfiguredHoldStore.ts`           | Changed       | `find` throws like its siblings (the port grew). The plan first named `composition.ts`; the placeholder lives in `infrastructure/system/` |
+| `packages/api/test/fakes/InMemoryHoldStore.ts`                              | Changed       | clock, expiry, `find` (decisions 5, 6)                                                                                                    |
+| `packages/api/test/unit/application/use-cases/GetHold.test.ts`              | New           |                                                                                                                                           |
+| `packages/api/test/unit/application/use-cases/ReleaseHold.test.ts`          | New           |                                                                                                                                           |
+| `packages/api/test/unit/fakes/fakes.test.ts`                                | Changed       | the fake's expiry semantics are part of the contract it pins                                                                              |
+| `packages/api/test/unit/application/use-cases/CreateHold.test.ts`           | Changed       | the world passes its clock to the store                                                                                                   |
+| `packages/api/test/unit/application/use-cases/GetEventAvailability.test.ts` | Changed       | same, one line                                                                                                                            |
+| `packages/api/test/integration/http/{health,events,errors}.test.ts`         | Changed       | same, one line each                                                                                                                       |
+| `docs/tasks/TB-008-use-cases-and-fakes.md`                                  | Changed       | tick the two follow-ups this task closes                                                                                                  |
 
 ---
 

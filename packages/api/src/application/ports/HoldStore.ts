@@ -1,3 +1,4 @@
+import type { Hold } from "../../domain/entities/Hold.js";
 import type { HoldToken } from "../../domain/value-objects/HoldToken.js";
 import type { TierId } from "../../domain/value-objects/Ids.js";
 
@@ -27,4 +28,10 @@ export interface HoldStore {
   ): Promise<{ released: true; tierId: TierId; remaining: number } | { released: false }>;
 
   availability(tierIds: readonly TierId[]): Promise<ReadonlyMap<TierId, number>>;
+
+  /**
+   * The live hold, or null once it has expired or never existed — the two are
+   * one answer here, as they are for a key Redis has dropped.
+   */
+  find(token: HoldToken): Promise<Hold | null>;
 }

@@ -39,8 +39,8 @@ beforeAll(async () => {
   await runMigrations(client, migrationsDir);
   await seed(client);
   const repo = new PgEventRepository(client);
-  holds = new InMemoryHoldStore();
   clock = new FakeClock("2000-01-01T00:00:00.000Z");
+  holds = new InMemoryHoldStore(clock);
   getAvailability = new GetEventAvailabilityUseCase(repo, holds);
   app = buildServer({
     stats: unusedStats,

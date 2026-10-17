@@ -37,7 +37,10 @@ beforeAll(async () => {
     logger: pino({ level: "info" }, sink),
     events: new EventController(
       new ListUpcomingEventsUseCase(noEvents, new FakeClock("2026-01-01T00:00:00.000Z")),
-      new GetEventAvailabilityUseCase(noEvents, new InMemoryHoldStore()),
+      new GetEventAvailabilityUseCase(
+        noEvents,
+        new InMemoryHoldStore(new FakeClock("2026-01-01T00:00:00.000Z")),
+      ),
     ),
     checks: {},
   });

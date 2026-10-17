@@ -12,21 +12,27 @@ import { InMemoryHoldStore } from "../../fakes/InMemoryHoldStore.js";
 
 const TIER = tierId("t-1");
 const TOKEN = holdToken("tok-1");
+const TTL_MS = 120_000;
+
+function storeAt(start: string): { store: InMemoryHoldStore; clock: FakeClock } {
+  const clock = new FakeClock(start);
+  return { store: new InMemoryHoldStore(clock), clock };
+}
 
 describe("InMemoryHoldStore", () => {
   it("treats a tier it has never seen as insufficient and does not invent it", async () => {
-    const store = new InMemoryHoldStore();
+    const { store } = storeAt("2026-01-01T10:00:00.000Z");
 
-    const result = await store.reserve(TIER, 1, TOKEN);
+    const result = await store.reserve(TIER, 1, TOKEN, TTL_MS);
 
     expect(result).toEqual({ ok: false, reason: "insufficient" });
     expect(await store.availability([TIER])).toEqual(new Map());
   });
 
   it("restores inventory on release exactly once", async () => {
-    const store = new InMemoryHoldStore();
+    const { store } = storeAt("2026-01-01T10:00:00.000Z");
     store.seed(TIER, 10);
-    await store.reserve(TIER, 4, TOKEN);
+    await store.reserve(TIER, 4, TOKEN, TTL_MS);
 
     const first = await store.release(TOKEN);
     const second = await store.release(TOKEN);
@@ -37,12 +43,38 @@ describe("InMemoryHoldStore", () => {
   });
 
   it("refuses a duplicate token instead of silently overwriting the first hold", async () => {
-    const store = new InMemoryHoldStore();
+    const { store } = storeAt("2026-01-01T10:00:00.000Z");
     store.seed(TIER, 10);
-    await store.reserve(TIER, 4, TOKEN);
+    await store.reserve(TIER, 4, TOKEN, TTL_MS);
 
-    await expect(store.reserve(TIER, 1, TOKEN)).rejects.toThrow(/already holds/);
+    await expect(store.reserve(TIER, 1, TOKEN, TTL_MS)).rejects.toThrow(/already holds/);
 
+    expect(await store.availability([TIER])).toEqual(new Map([[TIER, 6]]));
+  });
+
+  it("finds a live hold by its token", async () => {
+    const { store } = storeAt("2026-01-01T10:00:00.000Z");
+    store.seed(TIER, 10);
+    await store.reserve(TIER, 4, TOKEN, TTL_MS);
+
+    const hold = await store.find(TOKEN);
+
+    expect(hold?.qty.value).toBe(4);
+    expect(hold?.expiresAt).toEqual(new Date("2026-01-01T10:02:00.000Z"));
+  });
+
+  it("forgets an expired hold without giving its inventory back", async () => {
+    // As Redis will: the key is gone, the counter is not restored. That gap
+    // is the sweeper's job (TB-026), and a fake that closed it would hide
+    // the reason the sweeper exists.
+    const { store, clock } = storeAt("2026-01-01T10:00:00.000Z");
+    store.seed(TIER, 10);
+    await store.reserve(TIER, 4, TOKEN, TTL_MS);
+
+    clock.advance(TTL_MS);
+
+    expect(await store.find(TOKEN)).toBeNull();
+    expect(await store.release(TOKEN)).toEqual({ released: false });
     expect(await store.availability([TIER])).toEqual(new Map([[TIER, 6]]));
   });
 });

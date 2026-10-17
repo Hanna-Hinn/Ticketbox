@@ -23,7 +23,7 @@ function world(opts: { remaining?: number; ttlMs?: number; clock?: FakeClock } =
       .withTiers([aTier().withRemaining(remaining).build()])
       .build(),
   ]);
-  const holds = new InMemoryHoldStore();
+  const holds = new InMemoryHoldStore(clock);
   holds.seed(TIER, remaining);
   const tokens = new FixedTokenGenerator(["tok-1", "tok-2", "tok-3"]);
   const useCase = new CreateHoldUseCase(events, holds, clock, tokens, opts.ttlMs ?? TTL_MS);

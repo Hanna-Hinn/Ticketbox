@@ -1,4 +1,5 @@
 import type { HoldStore } from "../../application/ports/HoldStore.js";
+import type { Hold } from "../../domain/entities/Hold.js";
 import type { TierId } from "../../domain/value-objects/Ids.js";
 
 // The HoldStore until TB-022 builds the real one. It has never seen any
@@ -19,5 +20,9 @@ export class UnconfiguredHoldStore implements HoldStore {
 
   async availability(): Promise<ReadonlyMap<TierId, number>> {
     return new Map();
+  }
+
+  async find(): Promise<Hold | null> {
+    throw new Error("HoldStore is not configured until TB-022");
   }
 }
