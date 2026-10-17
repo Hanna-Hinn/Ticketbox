@@ -10,7 +10,7 @@ import { describeRedisError } from "./client.js";
 import { decodeMember, encodeMember } from "./holdIndex.js";
 import { keys } from "./keys.js";
 import { defineHoldScripts } from "./scripts.js";
-import { CACHE_COMMAND_DEADLINE_MS, within } from "./within.js";
+import { CACHE_COMMAND_DEADLINE_MS, within, WRITE_COMMAND_DEADLINE_MS } from "./within.js";
 
 // The scripts' reply contracts: create_hold.lua answers INSUFFICIENT or
 // NO_COUNTER, release_hold.lua answers NOTHING_TO_RELEASE or NO_COUNTER,
@@ -25,13 +25,6 @@ const NOT_EXPIRED = -3;
 
 // SCAN's hint, not a limit: Redis returns about this many keys per call.
 const SCAN_COUNT = 100;
-
-// A socket that is "ready" and not answering (half-open TCP, a BUSY server)
-// would hold a POST /holds for as long as the OS takes to notice; the write
-// path gets a deadline too, wider than the cache's because a script that
-// ran but whose reply was lost is not "did not happen" — it is a hold with
-// nobody holding its token, bounded by the TTL (plan §6).
-const HOLD_COMMAND_DEADLINE_MS = 1_000;
 
 // The live truth about holds: a counter per tier, a hash per hold with the
 // hold's own TTL, a sorted set per tier for the sweeper. Writes fail closed
@@ -66,7 +59,7 @@ export class RedisHoldStore implements HoldStore, InventoryRepair {
         hold.expiresAt.getTime() - hold.createdAt.getTime(),
         hold.eventId,
       ),
-      HOLD_COMMAND_DEADLINE_MS,
+      WRITE_COMMAND_DEADLINE_MS,
       "reserve",
     );
     if (left === NO_COUNTER) {
@@ -92,7 +85,7 @@ export class RedisHoldStore implements HoldStore, InventoryRepair {
     // expires in between is answered "nothing to release".
     const tier = await within(
       this.redis.hget(keys.hold(token), "tierId"),
-      HOLD_COMMAND_DEADLINE_MS,
+      WRITE_COMMAND_DEADLINE_MS,
       "release",
     );
     if (tier === null) return { released: false };
@@ -105,7 +98,7 @@ export class RedisHoldStore implements HoldStore, InventoryRepair {
         token,
         owner,
       ),
-      HOLD_COMMAND_DEADLINE_MS,
+      WRITE_COMMAND_DEADLINE_MS,
       "release",
     );
     if (left === NO_COUNTER) {
@@ -158,7 +151,7 @@ export class RedisHoldStore implements HoldStore, InventoryRepair {
     this.requireReady("find");
     const fields = await within(
       this.redis.hgetall(keys.hold(token)),
-      HOLD_COMMAND_DEADLINE_MS,
+      WRITE_COMMAND_DEADLINE_MS,
       "find",
     );
     // HGETALL on a key that does not exist (expired, evicted, never written)
@@ -187,7 +180,7 @@ export class RedisHoldStore implements HoldStore, InventoryRepair {
     do {
       const [next, batch] = await within(
         this.redis.scan(cursor, "MATCH", keys.tierHoldsPattern(), "COUNT", SCAN_COUNT),
-        HOLD_COMMAND_DEADLINE_MS,
+        WRITE_COMMAND_DEADLINE_MS,
         "scan for expired holds",
       );
       cursor = next;
@@ -201,7 +194,7 @@ export class RedisHoldStore implements HoldStore, InventoryRepair {
         }
         const members = await within(
           this.redis.zrangebyscore(key, "-inf", now.getTime()),
-          HOLD_COMMAND_DEADLINE_MS,
+          WRITE_COMMAND_DEADLINE_MS,
           "expired holds",
         );
         for (const member of members) {
@@ -212,7 +205,7 @@ export class RedisHoldStore implements HoldStore, InventoryRepair {
             // rather than retry it every tick; reconciliation (TB-027)
             // is what puts that quantity back.
             this.log.warn({ tierId: tier, member }, "unreadable index entry removed; reconcile");
-            await within(this.redis.zrem(key, member), HOLD_COMMAND_DEADLINE_MS, "expired holds");
+            await within(this.redis.zrem(key, member), WRITE_COMMAND_DEADLINE_MS, "expired holds");
             continue;
           }
           found.push({ token: decoded.token, tierId: tier, qty: decoded.qty });
@@ -233,7 +226,7 @@ export class RedisHoldStore implements HoldStore, InventoryRepair {
         hold.qty,
         now.getTime(),
       ),
-      HOLD_COMMAND_DEADLINE_MS,
+      WRITE_COMMAND_DEADLINE_MS,
       "sweep",
     );
     if (left === NOTHING_TO_SWEEP) return { swept: false };
@@ -264,14 +257,14 @@ export class RedisHoldStore implements HoldStore, InventoryRepair {
     // is "nothing to consume".
     const tier = await within(
       this.redis.hget(keys.hold(token), "tierId"),
-      HOLD_COMMAND_DEADLINE_MS,
+      WRITE_COMMAND_DEADLINE_MS,
       "consume",
     );
     if (tier === null) return false;
     const owner = tierId(tier);
     const reply = await within(
       this.redis.consumeHold(keys.hold(token), keys.tierHolds(owner), token, owner),
-      HOLD_COMMAND_DEADLINE_MS,
+      WRITE_COMMAND_DEADLINE_MS,
       "consume",
     );
     return reply !== NOTHING_TO_CONSUME;
@@ -281,7 +274,7 @@ export class RedisHoldStore implements HoldStore, InventoryRepair {
     this.requireReady("list held");
     const members = await within(
       this.redis.zrange(keys.tierHolds(tierId), "0", "-1"),
-      HOLD_COMMAND_DEADLINE_MS,
+      WRITE_COMMAND_DEADLINE_MS,
       "held",
     );
     const entries: HeldEntry[] = [];
@@ -307,7 +300,7 @@ export class RedisHoldStore implements HoldStore, InventoryRepair {
         .hget(keys.tier(tierId), "remaining")
         .hset(keys.tier(tierId), "remaining", remaining)
         .exec(),
-      HOLD_COMMAND_DEADLINE_MS,
+      WRITE_COMMAND_DEADLINE_MS,
       "rebuild",
     );
     // exec() answers null only when a WATCHed key changed; nothing is

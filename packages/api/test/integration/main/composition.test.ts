@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { fileURLToPath } from "node:url";
 import type { Redis } from "ioredis";
 import type pg from "pg";
@@ -370,10 +371,14 @@ describe("compose", () => {
           payload: { eventId: jazz, tierId: general, qty: 2 },
         })
       ).json<{ token: string }>().token;
-    const confirm = (token: string): Promise<{ statusCode: number; json<T = unknown>(): T }> =>
+    const confirm = (
+      token: string,
+      key: string = randomUUID(),
+    ): Promise<{ statusCode: number; headers: Record<string, unknown>; json<T = unknown>(): T }> =>
       system.app.inject({
         method: "POST",
         url: "/orders",
+        headers: { "idempotency-key": key },
         payload: { holdToken: token, email: "hanna@example.com" },
       });
 

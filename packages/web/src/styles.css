@@ -92,3 +92,11 @@ a {
 .summary dd {
   margin: 0;
 }
+
+.confirm-form {
+  margin: 1rem 0;
+}
+
+.confirm-form input {
+  width: 16rem;
+}

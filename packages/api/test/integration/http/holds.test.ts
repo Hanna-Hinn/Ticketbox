@@ -15,6 +15,7 @@ import { InMemoryEventRepository } from "../../fakes/InMemoryEventRepository.js"
 import { InMemoryHoldRepository } from "../../fakes/InMemoryHoldRepository.js";
 import { InMemoryHoldStore } from "../../fakes/InMemoryHoldStore.js";
 import {
+  freshIdempotencyStore,
   unusedAdminController,
   unusedEventController,
   unusedOrderController,
@@ -48,6 +49,7 @@ function server(remaining = 10): {
     logger: pino({ level: "silent" }),
     events: unusedEventController(),
     orders: unusedOrderController(),
+    idempotency: freshIdempotencyStore(),
     holds: new HoldController(
       new CreateHoldUseCase(
         events,

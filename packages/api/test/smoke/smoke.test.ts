@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import { SEED_EVENTS } from "../../src/infrastructure/postgres/seed.js";
 
@@ -56,7 +57,7 @@ describe("smoke", () => {
 
     const confirmed = await fetch(`${baseUrl}/orders`, {
       method: "POST",
-      headers: { "content-type": "application/json" },
+      headers: { "content-type": "application/json", "idempotency-key": randomUUID() },
       body: JSON.stringify({ holdToken: token, email: "smoke@example.com" }),
     });
 

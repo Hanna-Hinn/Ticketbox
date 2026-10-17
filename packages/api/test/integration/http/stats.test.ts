@@ -4,6 +4,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { GetCacheStatsUseCase } from "../../../src/application/use-cases/GetCacheStats.js";
 import { StatsController } from "../../../src/presentation/http/controllers/StatsController.js";
 import {
+  freshIdempotencyStore,
   unusedAdminController,
   unusedEventController,
   unusedHoldController,
@@ -27,6 +28,7 @@ function serverWith(stats: InMemoryCacheStats): FastifyInstance {
     admin: unusedAdminController(),
     holds: unusedHoldController(),
     orders: unusedOrderController(),
+    idempotency: freshIdempotencyStore(),
     checks: { postgres: ok, redis: ok },
   });
   return app;

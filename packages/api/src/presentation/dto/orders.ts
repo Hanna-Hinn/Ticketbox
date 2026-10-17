@@ -5,10 +5,11 @@ export const CreateOrderRequest = z.object({
   email: z.email(),
 });
 
-// Optional here; TB-030 makes it required and answers a retry with the
-// first order. Bounded so a header cannot become a long column value.
+// Required (TB-030): the same request twice must cost once, and the key is
+// how the server knows it is the same. Bounded so a header cannot become a
+// long column value or a long Redis key.
 export const IdempotencyHeaders = z.object({
-  "idempotency-key": z.string().min(1).max(200).optional(),
+  "idempotency-key": z.string().min(1).max(200),
 });
 
 export const OrderResponse = z.object({

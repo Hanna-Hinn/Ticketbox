@@ -17,6 +17,7 @@ import { InMemoryCacheStats } from "../../fakes/InMemoryCacheStats.js";
 import { InMemoryEventRepository } from "../../fakes/InMemoryEventRepository.js";
 import { InMemoryHoldRepository } from "../../fakes/InMemoryHoldRepository.js";
 import { InMemoryHoldStore } from "../../fakes/InMemoryHoldStore.js";
+import { InMemoryIdempotencyStore } from "../../fakes/InMemoryIdempotencyStore.js";
 import { InMemoryOrderRepository } from "../../fakes/InMemoryOrderRepository.js";
 
 // A route test exercises one controller; the server still needs the other
@@ -71,6 +72,10 @@ export function unusedOrderController(): OrderController {
       new FixedTokenGenerator([]),
     ),
   );
+}
+
+export function freshIdempotencyStore(): InMemoryIdempotencyStore {
+  return new InMemoryIdempotencyStore();
 }
 
 export function unusedStatsController(): StatsController {
