@@ -123,6 +123,54 @@ const layerBoundaries = [
   ),
 ];
 
+// packages/web takes DTO *types* from the API package and nothing else, and
+// talks HTTP only through src/api/ (TB-015). Same bypass bans as the API.
+const web = "packages/web/src";
+const noImportBypass = [
+  { selector: "ImportExpression", message: "No dynamic import(): it bypasses the boundary lint." },
+  { selector: "TSImportType", message: "No typeof import(): it bypasses the boundary lint." },
+];
+const webBoundaries = [
+  {
+    files: [`${web}/**/*.ts`, `${web}/**/*.tsx`],
+    rules: {
+      "no-restricted-imports": [
+        "error",
+        {
+          patterns: [
+            {
+              regex: "^@ticketbox/api/(?!src/presentation/dto/)",
+              message: "web imports DTO types from api (src/presentation/dto/) and nothing else.",
+            },
+            {
+              regex: "^@ticketbox/api/src/presentation/dto/",
+              allowTypeImports: true,
+              message: "DTO types only — a value import would ship the Zod schema to the browser.",
+            },
+          ],
+        },
+      ],
+      "no-restricted-syntax": ["error", ...noImportBypass],
+    },
+  },
+  {
+    files: [`${web}/**/*.ts`, `${web}/**/*.tsx`],
+    ignores: [`${web}/api/**`],
+    rules: {
+      "no-restricted-syntax": [
+        "error",
+        ...noImportBypass,
+        // The identifier, not the call shape: window.fetch, globalThis.fetch
+        // and `const f = fetch` are the same raw call wearing a hat.
+        {
+          selector: 'Identifier[name="fetch"]',
+          message: "No raw fetch outside src/api/ — add a function to the client.",
+        },
+      ],
+    },
+  },
+];
+
 export default tseslint.config(
   { ignores: ["**/dist/**", "**/coverage/**"] },
   js.configs.recommended,
@@ -136,5 +184,6 @@ export default tseslint.config(
     },
   },
   ...layerBoundaries,
+  ...webBoundaries,
   eslintConfigPrettier,
 );

@@ -1,12 +1,12 @@
 import type { ReactNode } from "react";
-import type { EventSummary } from "../api/types.js";
+import { api } from "../api/client.js";
 import { Link } from "../components/Link.js";
 import { ErrorMessage, Loading } from "../components/Status.js";
-import { useFetch } from "../hooks/useFetch.js";
+import { useRequest } from "../hooks/useRequest.js";
 import { formatStartsAt } from "../format.js";
 
 export function EventListPage(): ReactNode {
-  const { state, retry } = useFetch<EventSummary[]>("/api/events");
+  const { state, retry } = useRequest("", (signal) => api.listEvents(signal));
 
   if (state.status === "loading") return <Loading />;
   if (state.status === "error") return <ErrorMessage message={state.message} retry={retry} />;

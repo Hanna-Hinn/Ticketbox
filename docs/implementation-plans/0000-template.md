@@ -37,17 +37,17 @@ whole reason this section exists.
 
 ## 3. Approach
 
-How you intend to build it. Enough that a reviewer can disagree with the *approach*
+How you intend to build it. Enough that a reviewer can disagree with the _approach_
 before any code exists, which is the cheapest possible moment to disagree.
 
 ### Layers touched
 
-| Layer | What changes |
-| --- | --- |
-| L1 `domain/**` | |
-| L2 `application/**` | |
-| L3 `infrastructure/**`, `presentation/**` | |
-| L4 `main/**`, `worker/**` | |
+| Layer                                     | What changes |
+| ----------------------------------------- | ------------ |
+| L1 `domain/**`                            |              |
+| L2 `application/**`                       |              |
+| L3 `infrastructure/**`, `presentation/**` |              |
+| L4 `main/**`, `worker/**`                 |              |
 
 ### New or changed ports
 
@@ -78,8 +78,8 @@ New numbered file(s). Never an edit to one that has already run.
 ## 4. Files
 
 | File | New / Changed | Why |
-| --- | --- | --- |
-| | | |
+| ---- | ------------- | --- |
+|      |               |     |
 
 Anything not in this table is out of scope for the PR. If implementation turns out
 to need a file that isn't listed, that's a plan change — say so rather than quietly
@@ -92,13 +92,13 @@ widening the diff.
 Match the levels the delivery plan's **Tests** line demands. Name the specific
 behaviours, not the count.
 
-| Level | Test | What it would catch |
-| --- | --- | --- |
-| Unit | | |
-| Integration | | |
-| Concurrency | | |
-| Smoke | | |
-| E2E | | |
+| Level       | Test | What it would catch |
+| ----------- | ---- | ------------------- |
+| Unit        |      |                     |
+| Integration |      |                     |
+| Concurrency |      |                     |
+| Smoke       |      |                     |
+| E2E         |      |                     |
 
 **Concurrency:** does this task touch inventory? If yes, name the exact assertion —
 N simultaneous operations against a known capacity, exact final count expected.

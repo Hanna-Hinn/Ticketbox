@@ -29,30 +29,30 @@ reasoning in six months without reading the code first.
 
 ### Layers touched
 
-| Layer | What changed |
-| --- | --- |
-| L1 `domain/**` | |
-| L2 `application/**` | |
-| L3 `infrastructure/**`, `presentation/**` | |
-| L4 `main/**`, `worker/**` | |
+| Layer                                     | What changed |
+| ----------------------------------------- | ------------ |
+| L1 `domain/**`                            |              |
+| L2 `application/**`                       |              |
+| L3 `infrastructure/**`, `presentation/**` |              |
+| L4 `main/**`, `worker/**`                 |              |
 
 ### Key files
 
 | File | What it does |
-| --- | --- |
-| | |
+| ---- | ------------ |
+|      |              |
 
 ### Redis keys introduced
 
 | Key | Type | TTL | Who writes it | Who reads it |
-| --- | --- | --- | --- | --- |
-| | | | | |
+| --- | ---- | --- | ------------- | ------------ |
+|     |      |     |               |              |
 
 ### Lua scripts introduced
 
 | Script | The race it prevents |
-| --- | --- |
-| | |
+| ------ | -------------------- |
+|        |                      |
 
 ---
 
@@ -65,20 +65,20 @@ If nothing diverged, write "nothing" — but be honest about it. A plan that sur
 contact with the code completely intact is unusual enough to be worth noting.
 
 | Planned | What actually happened | Why |
-| --- | --- | --- |
-| | | |
+| ------- | ---------------------- | --- |
+|         |                        |     |
 
 ---
 
 ## 4. Tests shipped
 
-| Level | Test file | Behaviour asserted |
-| --- | --- | --- |
-| Unit | | |
-| Integration | | |
-| Concurrency | | |
-| Smoke | | |
-| E2E | | |
+| Level       | Test file | Behaviour asserted |
+| ----------- | --------- | ------------------ |
+| Unit        |           |                    |
+| Integration |           |                    |
+| Concurrency |           |                    |
+| Smoke       |           |                    |
+| E2E         |           |                    |
 
 **Proven able to fail:** what was broken deliberately, and what went red.
 
@@ -96,8 +96,8 @@ contact with the code completely intact is unusual enough to be worth noting.
 **Verdict:** SAFE TO MERGE | NEEDS WORK → fixed → re-reviewed
 
 | Finding | Severity | Resolution |
-| --- | --- | --- |
-| | | |
+| ------- | -------- | ---------- |
+|         |          |            |
 
 Findings deliberately **not** fixed, and why:
 

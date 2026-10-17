@@ -140,9 +140,7 @@ export interface HoldStore {
     qty: number,
     token: HoldToken,
     ttlMs: number,
-  ): Promise<
-    { ok: true; remaining: number } | { ok: false; reason: "insufficient" }
-  >;
+  ): Promise<{ ok: true; remaining: number } | { ok: false; reason: "insufficient" }>;
   release(token: HoldToken): Promise<{ released: boolean }>;
   availability(eventId: EventId): Promise<Map<TierId, number>>;
 }
@@ -170,12 +168,7 @@ export class CreateHoldUseCase {
 // LAYER 4 — src/main/composition.ts
 // The ONLY file allowed to `new` an adapter. This is where the arrow flips.
 const holdStore: HoldStore = new RedisHoldStore(redis, keys);
-const createHold = new CreateHoldUseCase(
-  holdStore,
-  tiers,
-  systemClock,
-  uuidTokens,
-);
+const createHold = new CreateHoldUseCase(holdStore, tiers, systemClock, uuidTokens);
 ```
 
 The three ports that make testing pleasant, and which I think people forget:
