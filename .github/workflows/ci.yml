@@ -53,6 +53,9 @@ jobs:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      # The runner has no browsers; the version comes from the lockfile. Before
+      # the stack, so a download failure is cheap and plainly not the code's.
+      - run: pnpm --filter @ticketbox/web exec playwright install --with-deps chromium
       # --wait blocks on the compose healthchecks; nothing in CI opens
       # RedisInsight, so it is not started.
       - run: docker compose up -d --wait postgres redis
@@ -73,8 +76,6 @@ jobs:
           curl -sf http://localhost:3000/health || { echo "API did not become healthy within 30s"; cat api.log; exit 1; }
           curl -sf http://localhost:5173/ > /dev/null || { echo "web app did not answer within 30s"; cat web.log; exit 1; }
       - run: pnpm test:smoke
-      # The runner has no browsers; the version comes from the lockfile.
-      - run: pnpm --filter @ticketbox/web exec playwright install --with-deps chromium
       - run: pnpm test:e2e
       - if: failure()
         run: |

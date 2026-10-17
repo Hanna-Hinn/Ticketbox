@@ -6,9 +6,19 @@ import { expect, test } from "@playwright/test";
 const JAZZ_ID = "11111111-1111-4111-8111-111111111111";
 
 test("browse events, open one, see three tiers with availability", async ({ page }) => {
-  const consoleErrors: string[] = [];
+  // Console errors and uncaught exceptions are different events; "nothing
+  // blew up" means both. A document load is what a full navigation fires
+  // and a pushState does not, so one load for the journey proves the click
+  // stayed in-app (a per-document navigation-entry count would not: it is
+  // 1 after a reload too).
+  const browserErrors: string[] = [];
   page.on("console", (message) => {
-    if (message.type() === "error") consoleErrors.push(message.text());
+    if (message.type() === "error") browserErrors.push(message.text());
+  });
+  page.on("pageerror", (error) => browserErrors.push(error.message));
+  let documentLoads = 0;
+  page.on("load", () => {
+    documentLoads += 1;
   });
 
   await page.goto("/");
@@ -24,7 +34,6 @@ test("browse events, open one, see three tiers with availability", async ({ page
     "200 of 200",
     "Sold out",
   ]);
-  // One navigation entry: the click was handled in-app, not a full reload.
-  expect(await page.evaluate(() => performance.getEntriesByType("navigation").length)).toBe(1);
-  expect(consoleErrors).toEqual([]);
+  expect(documentLoads).toBe(1);
+  expect(browserErrors).toEqual([]);
 });

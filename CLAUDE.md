@@ -264,7 +264,7 @@ Four levels, distinguished by _what is real and what is faked_.
 ```bash
 pnpm test:unit          # no docker needed, run on every save
 pnpm test:integration   # needs: docker compose up
-pnpm test:smoke         # needs: api running
+pnpm test:smoke         # needs: api and web running
 pnpm test:e2e           # needs: full stack
 pnpm test:all
 ```

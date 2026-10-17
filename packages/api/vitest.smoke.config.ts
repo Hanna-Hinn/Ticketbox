@@ -1,8 +1,10 @@
 import { defineConfig } from "vitest/config";
 
-// Smoke hits a running API over real HTTP (SMOKE_BASE_URL, default
-// http://localhost:3000). Nothing is started or faked here; if the API is
-// not up, every test fails with a connection error, which is the answer.
+// Smoke hits a running API (SMOKE_BASE_URL, default http://localhost:3000)
+// and, for the sixth assertion, the running web app (SMOKE_WEB_URL, default
+// http://localhost:5173) over real HTTP. Nothing is started or faked here;
+// if a server is not up, its test fails with a connection error, which is
+// the answer.
 export default defineConfig({
   test: {
     name: "smoke",
