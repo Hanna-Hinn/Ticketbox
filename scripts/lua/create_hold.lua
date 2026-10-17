@@ -14,7 +14,7 @@
 -- and it is over in well under a millisecond.
 --
 -- KEYS[1]  tier hash        ticketbox:v1:tier:<tierId>        { remaining }
--- KEYS[2]  hold hash        ticketbox:v1:hold:<token>         { tierId, qty, createdAt, expiresAt }
+-- KEYS[2]  hold hash        ticketbox:v1:hold:<token>         { tierId, eventId, qty, createdAt, expiresAt }
 -- KEYS[3]  tier holds zset  ticketbox:v1:tier:<tierId>:holds  token -> expiresAt ms (the sweeper's index, TB-026)
 -- ARGV[1]  qty
 -- ARGV[2]  token
@@ -22,6 +22,7 @@
 -- ARGV[4]  createdAt, epoch ms, from the application's Clock
 -- ARGV[5]  expiresAt, epoch ms, the same Clock — the instant the client counts down to
 -- ARGV[6]  ttlMs, for the hold key's PEXPIRE (Redis's clock from now; the one thing not on the app's clock)
+-- ARGV[7]  eventId, so a hold found by token alone knows its event (TB-025)
 --
 -- Returns the new remaining (>= 0) when reserved; -1 when insufficient;
 -- -2 when the tier has no counter at all (never seeded, or lost — reconcile,
@@ -53,7 +54,7 @@ if tonumber(remaining) < qty then
   return -1
 end
 local left = redis.call('HINCRBY', KEYS[1], 'remaining', -qty)
-redis.call('HSET', KEYS[2], 'tierId', ARGV[3], 'qty', ARGV[1], 'createdAt', ARGV[4], 'expiresAt', ARGV[5])
+redis.call('HSET', KEYS[2], 'tierId', ARGV[3], 'eventId', ARGV[7], 'qty', ARGV[1], 'createdAt', ARGV[4], 'expiresAt', ARGV[5])
 redis.call('PEXPIRE', KEYS[2], ARGV[6])
 redis.call('ZADD', KEYS[3], ARGV[5], ARGV[2])
 return left

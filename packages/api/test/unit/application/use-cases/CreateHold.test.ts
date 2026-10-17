@@ -46,6 +46,9 @@ describe("CreateHoldUseCase", () => {
     expect(result).toEqual({
       ok: true,
       token: holdToken("tok-1"),
+      eventId: DEFAULT_EVENT_ID,
+      tierId: TIER,
+      qty: 2,
       expiresAt: new Date("2026-01-01T10:02:00.000Z"),
       remaining: 8,
     });
@@ -80,6 +83,7 @@ describe("CreateHoldUseCase", () => {
 
     expect(result).toEqual(expect.objectContaining({ ok: true, token: holdToken("tok-1") }));
     expect(received?.token).toBe(holdToken("tok-1"));
+    expect(received?.eventId).toBe(DEFAULT_EVENT_ID);
     expect(received?.tierId).toBe(TIER);
     expect(received?.qty.value).toBe(2);
     expect(received?.expiresAt).toEqual(new Date("2026-01-01T10:02:00.000Z"));

@@ -171,7 +171,7 @@ Read `event_handler.js` before writing the "runs twice" answer. The plan reasone
 
 ## 8. Follow-ups left behind
 
-- [ ] **Who seeds the live counters** (`tier:<id> remaining`)? Until something writes them, every reserve is refused. TB-023 (route), TB-025 (clicks) and TB-027 (reconcile) — one of them has to answer, deliberately.
+- [x] **Who seeds the live counters** (`tier:<id> remaining`)? Until something writes them, every reserve is refused. TB-023 (route), TB-025 (clicks) and TB-027 (reconcile) — one of them has to answer, deliberately. _TB-025: `pnpm seed`, with `HSETNX`, for dev and CI; rebuilding a lost counter is TB-027's._
 - [x] TB-023: `release_hold.lua`, compare-and-restore; `RedisHoldStore.release` throws until then. The replay guard means a release followed by a replayed reserve of the same token would pay again — the replay window is the reconnect, release is later; worth one sentence in TB-023's plan.
 - [ ] TB-026: the sweeper must handle both orders of "hold key gone" and "index score passed" (clock skew), and an index entry whose key was evicted.
 - [ ] TB-040: `keys.holdPattern()` for KEYS/SCAN inspection; the warn-per-request on an unseeded tier.

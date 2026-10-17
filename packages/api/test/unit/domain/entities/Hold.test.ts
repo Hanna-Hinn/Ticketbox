@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { Hold } from "../../../../src/domain/entities/Hold.js";
 import { InvalidHold } from "../../../../src/domain/errors/InvalidHold.js";
 import { holdToken } from "../../../../src/domain/value-objects/HoldToken.js";
-import { tierId } from "../../../../src/domain/value-objects/Ids.js";
+import { eventId, tierId } from "../../../../src/domain/value-objects/Ids.js";
 import { Quantity } from "../../../../src/domain/value-objects/Quantity.js";
 
 const TTL_MS = 120_000;
@@ -11,6 +11,7 @@ const createdAt = new Date("2026-01-01T10:00:00.000Z");
 function aHold(ttlMs = TTL_MS, now: Date = createdAt): Hold {
   return Hold.create({
     token: holdToken("tok-1"),
+    eventId: eventId("e-1"),
     tierId: tierId("t-1"),
     qty: Quantity.of(2),
     now,

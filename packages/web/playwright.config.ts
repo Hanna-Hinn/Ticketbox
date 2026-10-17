@@ -16,6 +16,9 @@ export default defineConfig({
   testDir: "e2e",
   // TB-037 fixes flakes properly; a retry here would hide them.
   retries: 0,
+  // One stack, one seed, one live counter: a spec that holds tickets changes
+  // the number every other spec reads. The journeys run one at a time.
+  workers: 1,
   reporter: process.env.CI ? "github" : "list",
   use: { baseURL: WEB_URL, trace: "retain-on-failure" },
   webServer: [

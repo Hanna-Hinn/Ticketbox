@@ -3,7 +3,7 @@ import type { Logger } from "pino";
 import type { HoldStore } from "../../application/ports/HoldStore.js";
 import { Hold } from "../../domain/entities/Hold.js";
 import type { HoldToken } from "../../domain/value-objects/HoldToken.js";
-import { tierId, type TierId } from "../../domain/value-objects/Ids.js";
+import { eventId, tierId, type TierId } from "../../domain/value-objects/Ids.js";
 import { Quantity } from "../../domain/value-objects/Quantity.js";
 import { describeRedisError } from "./client.js";
 import { keys } from "./keys.js";
@@ -55,6 +55,7 @@ export class RedisHoldStore implements HoldStore {
         hold.createdAt.getTime(),
         hold.expiresAt.getTime(),
         hold.expiresAt.getTime() - hold.createdAt.getTime(),
+        hold.eventId,
       ),
       HOLD_COMMAND_DEADLINE_MS,
       "reserve",
@@ -158,6 +159,7 @@ export class RedisHoldStore implements HoldStore {
     const expiresAtMs = numberField(fields, "expiresAt", token);
     return Hold.create({
       token,
+      eventId: eventId(stringField(fields, "eventId", token)),
       tierId: tierId(stringField(fields, "tierId", token)),
       qty: Quantity.of(numberField(fields, "qty", token)),
       now: new Date(createdAtMs),

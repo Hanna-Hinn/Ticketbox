@@ -1,6 +1,8 @@
 import type { FastifyInstance } from "fastify";
 import pino from "pino";
+import { CreateHoldUseCase } from "../application/use-cases/CreateHold.js";
 import { GetCacheStatsUseCase } from "../application/use-cases/GetCacheStats.js";
+import { GetHoldUseCase } from "../application/use-cases/GetHold.js";
 import { GetEventAvailabilityUseCase } from "../application/use-cases/GetEventAvailability.js";
 import { ListUpcomingEventsUseCase } from "../application/use-cases/ListUpcomingEvents.js";
 import { ReleaseHoldUseCase } from "../application/use-cases/ReleaseHold.js";
@@ -12,6 +14,7 @@ import { RedisCacheStats } from "../infrastructure/redis/RedisCacheStats.js";
 import { RedisHoldStore } from "../infrastructure/redis/RedisHoldStore.js";
 import { closeRedisClient, createRedisClient } from "../infrastructure/redis/client.js";
 import { SystemClock } from "../infrastructure/system/SystemClock.js";
+import { UuidTokenGenerator } from "../infrastructure/system/UuidTokenGenerator.js";
 import { EventController } from "../presentation/http/controllers/EventController.js";
 import { HoldController } from "../presentation/http/controllers/HoldController.js";
 import { StatsController } from "../presentation/http/controllers/StatsController.js";
@@ -47,21 +50,32 @@ export function compose(config: Config): System {
     log.child({ component: "event-cache" }),
   );
   // HoldStore: the live counters and holds, create_hold.lua behind reserve
-  // (TB-022). Nothing seeds the counters yet (TB-027).
+  // (TB-022). The counters are written by `pnpm seed` (seedLiveCounters) for
+  // dev and CI; rebuilding them from Postgres is reconciliation (TB-027).
   const holds = new RedisHoldStore(redis, log.child({ component: "hold-store" }));
   // HoldRepository: the audit row, written after the store decides (TB-024).
   const holdMirror = new PgHoldRepository(pool);
   const clock = new SystemClock(); // Clock
+  const tokens = new UuidTokenGenerator(); // TokenGenerator
 
   // Use cases
   const listUpcoming = new ListUpcomingEventsUseCase(events, clock);
   const getAvailability = new GetEventAvailabilityUseCase(events, holds);
   const getCacheStats = new GetCacheStatsUseCase(cacheStats); // CacheStatsReader
+  const createHold = new CreateHoldUseCase(
+    events,
+    holds,
+    holdMirror,
+    clock,
+    tokens,
+    config.HOLD_TTL_MS,
+  );
+  const getHold = new GetHoldUseCase(holds, clock);
   const releaseHold = new ReleaseHoldUseCase(holds, holdMirror);
 
   // HTTP
   const controller = new EventController(listUpcoming, getAvailability);
-  const holdController = new HoldController(releaseHold);
+  const holdController = new HoldController(createHold, getHold, releaseHold);
   const stats = new StatsController(getCacheStats);
   const checks = {
     postgres: async (): Promise<void> => {

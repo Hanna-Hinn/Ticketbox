@@ -32,6 +32,7 @@ describe("loadConfig", () => {
       REDIS_URL: validEnv.REDIS_URL,
       PORT: 4000,
       LOG_LEVEL: "info",
+      HOLD_TTL_MS: 120_000,
     });
   });
 
@@ -42,6 +43,16 @@ describe("loadConfig", () => {
 
   it("throws when LOG_LEVEL is not a pino level", () => {
     expect(() => loadConfig({ ...validEnv, LOG_LEVEL: "loud" })).toThrowError(/LOG_LEVEL/);
+  });
+
+  it("defaults HOLD_TTL_MS to two minutes and accepts a shorter one", () => {
+    expect(loadConfig(validEnv).HOLD_TTL_MS).toBe(120_000);
+    expect(loadConfig({ ...validEnv, HOLD_TTL_MS: "3000" }).HOLD_TTL_MS).toBe(3000);
+  });
+
+  it("refuses a HOLD_TTL_MS that is zero or not a whole number of milliseconds", () => {
+    expect(() => loadConfig({ ...validEnv, HOLD_TTL_MS: "0" })).toThrow(/HOLD_TTL_MS/);
+    expect(() => loadConfig({ ...validEnv, HOLD_TTL_MS: "1.5" })).toThrow(/HOLD_TTL_MS/);
   });
 
   it("defaults PORT to 3000 when it's omitted", () => {

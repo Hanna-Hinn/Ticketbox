@@ -38,7 +38,27 @@ describe("smoke", () => {
     expect(await response.json()).toMatchObject({ id: seededEventId });
   });
 
-  it.todo("POST /holds for 1 ticket returns 201 — TB-025 (route) over TB-022 (Lua reserve)");
+  it("POST /holds for 1 ticket is 201, and the hold is released again afterwards", async () => {
+    // The seed wrote the live counters (TB-025); releasing leaves them as
+    // they were for the next suite.
+    const firstTier = firstSeedEvent.tiers[0];
+    if (firstTier === undefined) throw new Error("the first seed event has no tiers");
+
+    const created = await fetch(`${baseUrl}/holds`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ eventId: seededEventId, tierId: firstTier.id, qty: 1 }),
+    });
+    const body: unknown = await created.json();
+    const token =
+      typeof body === "object" && body !== null && "token" in body ? String(body.token) : "";
+    const released = await fetch(`${baseUrl}/holds/${token}`, { method: "DELETE" });
+
+    expect(created.status).toBe(201);
+    expect(body).toMatchObject({ eventId: seededEventId, tierId: firstTier.id, qty: 1 });
+    expect(released.status).toBe(200);
+    expect(await released.json()).toEqual({ released: true });
+  });
   it("DELETE /holds/:token is 200 with released: false for a token nobody holds", async () => {
     const response = await fetch(`${baseUrl}/holds/00000000-0000-4000-8000-000000000000`, {
       method: "DELETE",

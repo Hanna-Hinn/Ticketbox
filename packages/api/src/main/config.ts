@@ -5,6 +5,9 @@ const envSchema = z.object({
   REDIS_URL: z.string().url(),
   PORT: z.coerce.number().int().min(1).max(65535).default(3000),
   LOG_LEVEL: z.enum(["fatal", "error", "warn", "info", "debug", "trace", "silent"]).default("info"),
+  // How long a hold lives (handbook: 120 s). Settable so a test can use a
+  // short real TTL (TB-028a).
+  HOLD_TTL_MS: z.coerce.number().int().min(1).default(120_000),
 });
 
 export type Config = Readonly<z.infer<typeof envSchema>>;

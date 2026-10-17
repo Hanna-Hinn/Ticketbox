@@ -66,3 +66,29 @@ a {
 .error {
   color: #a4262c;
 }
+
+.hold-form {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.hold-form input {
+  width: 3.5rem;
+}
+
+.countdown {
+  font-size: 2rem;
+  font-variant-numeric: tabular-nums;
+  margin: 0.5rem 0;
+}
+
+.summary {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 0.25rem 1rem;
+}
+
+.summary dd {
+  margin: 0;
+}

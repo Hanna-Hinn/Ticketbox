@@ -156,8 +156,8 @@ Think about the error path of every command in a script, not just its happy path
 
 ## 8. Follow-ups left behind
 
-- [ ] **Who seeds the live counters** — still open; TB-025's plan must decide (TB-022's follow-up).
-- [ ] TB-025: `POST /holds`, `GET /holds/:token`, `UuidTokenGenerator`; the `z.uuid()` on the token param assumes it.
+- [x] **Who seeds the live counters** — still open; TB-025's plan must decide (TB-022's follow-up). _TB-025: `pnpm seed`, `HSETNX`._
+- [x] TB-025: `POST /holds`, `GET /holds/:token`, `UuidTokenGenerator`; the `z.uuid()` on the token param assumes it. _Done._
 - [ ] TB-026: the sweeper's script must be `EXISTS`-first and restore-before-delete, for the same two reasons as this one.
 - [ ] The fake's `?? 0` on release; align with `-2` if a test ever needs the state.
 - [ ] GitGuardian: incident 38333657 is the fixture UUID in `742b136`; dismiss it or let the squash merge drop the commit.

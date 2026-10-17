@@ -4,7 +4,7 @@ import { Hold } from "../../../../src/domain/entities/Hold.js";
 import { holdToken } from "../../../../src/domain/value-objects/HoldToken.js";
 import { tierId } from "../../../../src/domain/value-objects/Ids.js";
 import { Quantity } from "../../../../src/domain/value-objects/Quantity.js";
-import { aHold } from "../../../fakes/builders.js";
+import { aHold, DEFAULT_EVENT_ID } from "../../../fakes/builders.js";
 import { FakeClock } from "../../../fakes/FakeClock.js";
 import { InMemoryHoldStore } from "../../../fakes/InMemoryHoldStore.js";
 import { stubHoldStore } from "../../../fakes/stubHoldStore.js";
@@ -40,6 +40,7 @@ describe("GetHoldUseCase", () => {
     expect(result).toEqual({
       ok: true,
       token: TOKEN,
+      eventId: DEFAULT_EVENT_ID,
       tierId: TIER,
       qty: 2,
       expiresAt: new Date("2026-01-01T10:02:00.000Z"),
@@ -85,6 +86,7 @@ describe("GetHoldUseCase", () => {
     const clock = new FakeClock("2026-01-01T10:00:00.000Z");
     const expired = Hold.create({
       token: TOKEN,
+      eventId: DEFAULT_EVENT_ID,
       tierId: TIER,
       qty: Quantity.of(1),
       now: new Date("2026-01-01T09:00:00.000Z"),
@@ -105,6 +107,7 @@ describe("GetHoldUseCase", () => {
     const clock = new FakeClock("2026-01-01T10:00:00.000Z");
     const hold = Hold.create({
       token: TOKEN,
+      eventId: DEFAULT_EVENT_ID,
       tierId: TIER,
       qty: Quantity.of(1),
       now: clock.now(),
