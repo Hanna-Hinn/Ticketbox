@@ -4,6 +4,7 @@ import { GetEventAvailabilityUseCase } from "../application/use-cases/GetEventAv
 import { ListUpcomingEventsUseCase } from "../application/use-cases/ListUpcomingEvents.js";
 import { PgEventRepository } from "../infrastructure/postgres/PgEventRepository.js";
 import { createPool } from "../infrastructure/postgres/pool.js";
+import { CachedEventRepository } from "../infrastructure/redis/CachedEventRepository.js";
 import { closeRedisClient, createRedisClient } from "../infrastructure/redis/client.js";
 import { SystemClock } from "../infrastructure/system/SystemClock.js";
 import { UnconfiguredHoldStore } from "../infrastructure/system/UnconfiguredHoldStore.js";
@@ -30,7 +31,13 @@ export function compose(config: Config): System {
   const redis = createRedisClient(config.REDIS_URL, log.child({ component: "redis" }));
 
   // Ports → adapters
-  const events = new PgEventRepository(pool); // EventRepository
+  // EventRepository: Postgres computes, Redis remembers the answer for 300 s
+  // (TB-018). Only this line knows there is a cache.
+  const events = new CachedEventRepository(
+    new PgEventRepository(pool),
+    redis,
+    log.child({ component: "event-cache" }),
+  );
   const holds = new UnconfiguredHoldStore(); // HoldStore, until TB-022
   const clock = new SystemClock(); // Clock
 

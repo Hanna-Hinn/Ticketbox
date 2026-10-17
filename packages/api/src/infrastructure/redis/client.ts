@@ -14,7 +14,7 @@ export function createRedisClient(url: string, log: Logger): Redis {
   const client = new Redis(url);
   client.on("connect", () => log.info("redis connected"));
   client.on("ready", () => log.info("redis ready"));
-  client.on("error", (err: Error) => log.error({ err: describe(err) }, "redis error"));
+  client.on("error", (err: Error) => log.error({ err: describeRedisError(err) }, "redis error"));
   client.on("reconnecting", (delayMs: number) => log.warn({ delayMs }, "redis reconnecting"));
   client.on("end", () => log.info("redis connection ended"));
   return client;
@@ -24,7 +24,7 @@ export function createRedisClient(url: string, log: Logger): Redis {
 // args are the password. Log the error, not its arguments. A refused
 // connection to a host with two address families is an AggregateError whose
 // own message is empty and whose reasons sit in `errors` — keep those.
-function describe(err: Error): {
+export function describeRedisError(err: Error): {
   name: string;
   message: string;
   stack: string | undefined;
