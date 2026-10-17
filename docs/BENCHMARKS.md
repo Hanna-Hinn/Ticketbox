@@ -149,9 +149,9 @@ A 3-second warm-up run preceded each measured run. Run from `packages/api` with 
 
 |             | Unindexed | Indexed  |
 | ----------- | --------- | -------- |
-| req/s (avg) | 310.6     | 281.2    | 11 303 | 10 742 |
-| p50 latency | 159 ms    | 176 ms   | 3 ms   | 4 ms   |
-| p99 latency | 199 ms    | 228 ms   | 9 ms   | 9 ms   |
+| req/s (avg) | 76.4      | 310.6    |
+| p50 latency | 635 ms    | 159 ms   |
+| p99 latency | 802 ms    | 199 ms   |
 | mean        | 632.5 ms  | 159.6 ms |
 
 **Notes:**
@@ -173,9 +173,9 @@ Same load test, same endpoint, `CachedEventRepository` in front of the **indexed
 
 |                         | Indexed (no cache), TB-013's row | Indexed (no cache), this build, Redis stopped                                            | Cached, cold                                                                                                                                                      | Cached, warm |
 | ----------------------- | -------------------------------- | ---------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------ |
-| req/s (avg)             | 310.6                            | 11 303                                                                                   | 10 742                                                                                                                                                            |
-| p50 latency             | 159 ms                           | 3 ms                                                                                     | 4 ms                                                                                                                                                              |
-| p99 latency             | 199 ms                           | 9 ms                                                                                     | 9 ms                                                                                                                                                              |
+| req/s (avg)             | 310.6                            | 281.2                                                                                    | 11 303                                                                                                                                                            | 10 742       |
+| p50 latency             | 159 ms                           | 176 ms                                                                                   | 3 ms                                                                                                                                                              | 4 ms         |
+| p99 latency             | 199 ms                           | 228 ms                                                                                   | 9 ms                                                                                                                                                              | 9 ms         |
 | mean latency            | 159.6 ms                         | 176.5 ms                                                                                 | 3.92 ms                                                                                                                                                           | 4.15 ms      |
 | Postgres queries issued | not counted in TB-013            | **2 857** measured (8 571 `idx_scan` ÷ 3) for ~2 812 completed requests: one per request | **2** in the 10 s run (6 `idx_scan` ÷ 3; one attributed to pg_stat lag from the preceding `curl`); **1** per cold wave in 5 of 6 repeated 1 s runs — see the note | **0**        |
 
