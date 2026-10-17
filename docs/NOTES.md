@@ -74,19 +74,55 @@ That is TB-019's decision 1 observed in the wild: the refill at (a) took the ref
 
 **Task:** naive `RedisHoldStore` (`HGET` → check in TypeScript → `HINCRBY`), 200 concurrent requests against a tier with 10 remaining.
 
-**Date:**
+**Date:** 2026-10-17, branch `spike/TB-021-prove-the-race` (the store and the test were written, run, and deleted; this entry is the deliverable). Local Redis 7.0.15, DB 9, the integration test harness.
 
-**Requests that received a "success" response:**
+**What I did:** wrote the naive store exactly as the task describes, as a class inside a throwaway vitest file, and a test that seeds `remaining = 10`, fires `Promise.all` of 200 `reserve(qty = 2)` calls, and asserts TB-022's numbers — 5 successes, `remaining` 0 — so that the failure prints what actually happened. Ran it three times on one ioredis connection, then three times with the 200 callers spread over ten connections (closer to ten API processes). I wrote the prediction down first (scratchpad, before the first run).
 
-**Final `remaining` value in Redis (expected: 0, actual: ?):**
+```ts
+class NaiveRedisHoldStore {
+  constructor(private readonly redis: Redis) {}
 
-**Was it ever negative?**
+  async reserve(
+    tier: TierId,
+    qty: number,
+    token: HoldToken,
+    ttlMs: number,
+  ): Promise<{ ok: true; remaining: number } | { ok: false; reason: "insufficient" }> {
+    const current = Number(await this.redis.hget(keys.tier(tier), "remaining"));
+    if (current < qty) return { ok: false, reason: "insufficient" };
+    // ← the gap. Every other caller's HGET can land here.
+    const remaining = await this.redis.hincrby(keys.tier(tier), "remaining", -qty);
+    await this.redis.hset(keys.hold(token), { tierId: tier, qty, expiresAt: Date.now() + ttlMs });
+    await this.redis.pexpire(keys.hold(token), ttlMs);
+    return { ok: true, remaining };
+  }
+}
+```
 
-**How many "successful" holds were actually oversold?**
+**What I expected:** on one connection, ioredis writes commands in FIFO order and `Promise.all` starts all 200 reserves in the same tick, so all 200 `HGET`s go out before a single `HINCRBY` — every caller reads 10, every check passes, then 200 decrements of 2 land. Prediction: **200 successes, `remaining` = 10 − 400 = −390, 195 oversold holds.** On ten connections I expected some interleaving: fewer than 200 but far more than 5, and still negative.
 
-**What this changed about how I think about atomicity:**
+**Requests that received a "success" response:** **200 of 200**, on every one of the six runs (one connection ×3, ten connections ×3).
 
-_(Cross-reference: these numbers belong in `BENCHMARKS.md` §7 too.)_
+**Final `remaining` value in Redis (expected: 0, actual: ?):** **−390**, every run. 200 hold keys written.
+
+**Was it ever negative?** It was never anything else: the 6th `HINCRBY` took it to −2 and the 200th to −390. Nothing in Redis objects — `HINCRBY` on a hash field is an integer operation with no floor; "remaining cannot go below zero" is a rule that lived only in the TypeScript `if`, and the `if` ran 200 times against the same stale 10.
+
+**How many "successful" holds were actually oversold?** **195** holds, 390 tickets, from a pool of 10. In the handbook's terms: 195 people with a countdown timer for seats that do not exist.
+
+```
+AssertionError: expected { successes: 200, … } to deeply equal { successes: 5, remaining: +0, … }
+-   "holds": 5,          +   "holds": 200,
+-   "oversoldHolds": 0,  +   "oversoldHolds": 195,
+-   "remaining": 0,      +   "remaining": -390,
+-   "successes": 5,      +   "successes": 200,
+Tests  6 failed (6)
+```
+
+The ten-connection variant gave the identical numbers. That surprised me a little: I had expected the sockets to interleave. They do not, because the delay that matters is not between sockets but between the `HGET` reply reaching Node and the `HINCRBY` being written — an event-loop turn on the client, during which Redis has already answered every other `HGET` in its queue. Redis is single-threaded and fast; the gap is on our side and it is always wider than Redis's time to serve 199 reads.
+
+**What this changed about how I think about atomicity:** "each command is atomic" is true and useless. The unit of correctness is the _decision_ — read, compare, write — and anything that puts a network round trip inside that unit has moved the decision to the client, where there are 200 of them, each certain it is alone. The fix is not "be faster" (ten connections proved the window is not about speed) and not "check again after the write" (by then the ticket has already been promised): the read and the write have to happen where no one else can run in between, which on Redis means one script on the server (TB-022) or a `WATCH` that makes the write fail if the read went stale. Two more things I will not forget: a counter in Redis has no floor unless you write one, and a test that asserts an exact final count is the only kind that would have caught this — "did it work" passed 200 times.
+
+_(These numbers are the "Naive" row in `BENCHMARKS.md` §7. TB-022 fills the Lua row with the same test.)_
 
 ---
 
