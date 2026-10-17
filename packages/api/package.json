@@ -5,16 +5,21 @@
   "scripts": {
     "typecheck": "tsc --noEmit",
     "test:unit": "vitest run --config vitest.unit.config.ts",
-    "test:integration": "vitest run --config vitest.integration.config.ts --passWithNoTests"
+    "test:integration": "vitest run --config vitest.integration.config.ts --passWithNoTests",
+    "migrate": "tsx src/main/migrate.ts",
+    "seed": "tsx src/main/seed.ts"
   },
   "devDependencies": {
     "@types/node": "^26.2.0",
+    "@types/pg": "^8.23.1",
     "@vitest/coverage-v8": "^4.1.11",
     "autocannon": "^8.0.0",
+    "tsx": "^4.23.15",
     "typescript": "^6.0.3",
     "vitest": "^4.1.11"
   },
   "dependencies": {
+    "pg": "^8.23.1",
     "zod": "^4.4.3"
   }
 }
