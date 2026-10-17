@@ -1,6 +1,6 @@
 # TB-023 — Release with compare-and-restore
 
-**Status:** Approved
+**Status:** Implemented — see [`docs/tasks/TB-023-release-compare-and-restore.md`](../tasks/TB-023-release-compare-and-restore.md) §3 for where reality diverged
 **Date:** 2026-10-17
 **Task:** TB-023 (`docs/02-product-delivery-plan.md`)
 **Branch:** `feat/TB-023-release-compare-and-restore` (stacked on `feat/TB-022-lua-create-hold`)
@@ -165,3 +165,12 @@ None blocking. Decision 3 (no counter → refuse the release rather than recreat
 - ☑ Task doc — `docs/tasks/TB-023-release-compare-and-restore.md`
 - ☐ Benchmark entry — nothing measurable changed
 - ☐ NOTES entry — not a SPIKE task
+
+---
+
+## 10. Amendments after implementation
+
+- **The script's order** (the diagram above, §6): the first draft deleted before restoring; a later error would have lost the tickets. Restore first — found in review.
+- **Decision 1:** the deadline is 1 s, and the script checks the hold's `tierId` against the one the read returned.
+- **§5:** two "proven able to fail" rows were wrong (the prelude read answers sequential tests before the script runs); a stubbed-prelude test covers the adapter's `-1` branch, and the silent-client test covers both awaited commands.
+- **Decisions 2–8:** stood.
