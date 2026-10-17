@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
+import type { Hold } from "../../../src/domain/entities/Hold.js";
 import { holdToken } from "../../../src/domain/value-objects/HoldToken.js";
 import { tierId } from "../../../src/domain/value-objects/Ids.js";
-import { anEvent } from "../../fakes/builders.js";
+import { aHold, anEvent } from "../../fakes/builders.js";
 import { FakeClock } from "../../fakes/FakeClock.js";
 import { FixedTokenGenerator } from "../../fakes/FixedTokenGenerator.js";
 import { InMemoryEventRepository } from "../../fakes/InMemoryEventRepository.js";
@@ -13,6 +14,17 @@ import { InMemoryHoldStore } from "../../fakes/InMemoryHoldStore.js";
 const TIER = tierId("t-1");
 const TOKEN = holdToken("tok-1");
 const TTL_MS = 120_000;
+const START = "2026-01-01T10:00:00.000Z";
+
+function held(qty: number): Hold {
+  return aHold()
+    .forTier(TIER)
+    .withToken(TOKEN)
+    .withQty(qty)
+    .createdAt(START)
+    .withTtl(TTL_MS)
+    .build();
+}
 
 function storeAt(start: string): { store: InMemoryHoldStore; clock: FakeClock } {
   const clock = new FakeClock(start);
@@ -21,18 +33,18 @@ function storeAt(start: string): { store: InMemoryHoldStore; clock: FakeClock } 
 
 describe("InMemoryHoldStore", () => {
   it("treats a tier it has never seen as insufficient and does not invent it", async () => {
-    const { store } = storeAt("2026-01-01T10:00:00.000Z");
+    const { store } = storeAt(START);
 
-    const result = await store.reserve(TIER, 1, TOKEN, TTL_MS);
+    const result = await store.reserve(held(1));
 
     expect(result).toEqual({ ok: false, reason: "insufficient" });
     expect(await store.availability([TIER])).toEqual(new Map());
   });
 
   it("restores inventory on release exactly once", async () => {
-    const { store } = storeAt("2026-01-01T10:00:00.000Z");
+    const { store } = storeAt(START);
     store.seed(TIER, 10);
-    await store.reserve(TIER, 4, TOKEN, TTL_MS);
+    await store.reserve(held(4));
 
     const first = await store.release(TOKEN);
     const second = await store.release(TOKEN);
@@ -43,19 +55,19 @@ describe("InMemoryHoldStore", () => {
   });
 
   it("refuses a duplicate token instead of silently overwriting the first hold", async () => {
-    const { store } = storeAt("2026-01-01T10:00:00.000Z");
+    const { store } = storeAt(START);
     store.seed(TIER, 10);
-    await store.reserve(TIER, 4, TOKEN, TTL_MS);
+    await store.reserve(held(4));
 
-    await expect(store.reserve(TIER, 1, TOKEN, TTL_MS)).rejects.toThrow(/already holds/);
+    await expect(store.reserve(held(1))).rejects.toThrow(/already holds/);
 
     expect(await store.availability([TIER])).toEqual(new Map([[TIER, 6]]));
   });
 
   it("finds a live hold by its token", async () => {
-    const { store } = storeAt("2026-01-01T10:00:00.000Z");
+    const { store } = storeAt(START);
     store.seed(TIER, 10);
-    await store.reserve(TIER, 4, TOKEN, TTL_MS);
+    await store.reserve(held(4));
 
     const hold = await store.find(TOKEN);
 
@@ -67,9 +79,9 @@ describe("InMemoryHoldStore", () => {
     // As Redis will: the key is gone, the counter is not restored. That gap
     // is the sweeper's job (TB-026), and a fake that closed it would hide
     // the reason the sweeper exists.
-    const { store, clock } = storeAt("2026-01-01T10:00:00.000Z");
+    const { store, clock } = storeAt(START);
     store.seed(TIER, 10);
-    await store.reserve(TIER, 4, TOKEN, TTL_MS);
+    await store.reserve(held(4));
 
     clock.advance(TTL_MS);
 

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { CreateHoldUseCase } from "../../../../src/application/use-cases/CreateHold.js";
+import type { Hold } from "../../../../src/domain/entities/Hold.js";
 import { InvalidHold } from "../../../../src/domain/errors/InvalidHold.js";
 import { InvalidQuantity } from "../../../../src/domain/errors/InvalidQuantity.js";
 import { holdToken } from "../../../../src/domain/value-objects/HoldToken.js";
@@ -9,6 +10,7 @@ import { FakeClock } from "../../../fakes/FakeClock.js";
 import { FixedTokenGenerator } from "../../../fakes/FixedTokenGenerator.js";
 import { InMemoryEventRepository } from "../../../fakes/InMemoryEventRepository.js";
 import { InMemoryHoldStore } from "../../../fakes/InMemoryHoldStore.js";
+import { stubHoldStore } from "../../../fakes/stubHoldStore.js";
 
 const TTL_MS = 120_000;
 const TIER = tierId("11111111-1111-4111-8111-aaaaaaaaaaaa");
@@ -44,6 +46,40 @@ describe("CreateHoldUseCase", () => {
       expiresAt: new Date("2026-01-01T10:02:00.000Z"),
       remaining: 8,
     });
+  });
+
+  it("hands the store the same hold it tells the caller about", async () => {
+    // One clock: the expiry the client counts down to and the one the store
+    // indexes by are the same instant, carried by the same entity.
+    const clock = new FakeClock("2026-01-01T10:00:00.000Z");
+    const events = new InMemoryEventRepository([
+      anEvent()
+        .withTiers([aTier().withRemaining(10).build()])
+        .build(),
+    ]);
+    let received: Hold | undefined;
+    const store = stubHoldStore({
+      reserve: async (hold) => {
+        received = hold;
+        return { ok: true, remaining: 8 };
+      },
+    });
+    const useCase = new CreateHoldUseCase(
+      events,
+      store,
+      clock,
+      new FixedTokenGenerator(["tok-1"]),
+      TTL_MS,
+    );
+
+    const result = await useCase.execute(request);
+
+    expect(result).toEqual(expect.objectContaining({ ok: true, token: holdToken("tok-1") }));
+    expect(received?.token).toBe(holdToken("tok-1"));
+    expect(received?.tierId).toBe(TIER);
+    expect(received?.qty.value).toBe(2);
+    expect(received?.expiresAt).toEqual(new Date("2026-01-01T10:02:00.000Z"));
+    expect(result.ok && result.expiresAt).toEqual(received?.expiresAt);
   });
 
   it("sets the expiry to exactly now + ttl from the injected clock", async () => {

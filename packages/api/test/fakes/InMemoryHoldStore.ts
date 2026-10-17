@@ -1,9 +1,8 @@
 import type { Clock } from "../../src/application/ports/Clock.js";
 import type { HoldStore } from "../../src/application/ports/HoldStore.js";
-import { Hold } from "../../src/domain/entities/Hold.js";
+import type { Hold } from "../../src/domain/entities/Hold.js";
 import type { HoldToken } from "../../src/domain/value-objects/HoldToken.js";
 import type { TierId } from "../../src/domain/value-objects/Ids.js";
-import { Quantity } from "../../src/domain/value-objects/Quantity.js";
 
 // The port's contract with none of Redis's mechanics: a counter per tier and
 // a hold per token. Single-threaded, so "atomic" is free here — which is
@@ -14,11 +13,10 @@ import { Quantity } from "../../src/domain/value-objects/Quantity.js";
 // is NOT given back. The key vanishing is not a release; the sweeper
 // (TB-026) is what restores it.
 //
-// Two places it is stricter than Redis will be, on purpose, because both are
-// test-authoring bugs it should make loud: a reused token throws even if the
-// earlier hold has expired (Redis would accept the SET on a vanished key),
-// and a qty outside Quantity's bounds throws (the Lua would just decrement;
-// the fake must build a Hold, and CreateHold validates before it gets here).
+// One place it is stricter than Redis, on purpose, because it is a
+// test-authoring bug the fake should make loud: a reused token throws even
+// if the earlier hold has expired (Redis would accept the write on a
+// vanished key).
 export class InMemoryHoldStore implements HoldStore {
   private readonly remaining = new Map<TierId, number>();
   private readonly holds = new Map<HoldToken, Hold>();
@@ -30,27 +28,21 @@ export class InMemoryHoldStore implements HoldStore {
   }
 
   async reserve(
-    tierId: TierId,
-    qty: number,
-    token: HoldToken,
-    ttlMs: number,
+    hold: Hold,
   ): Promise<{ ok: true; remaining: number } | { ok: false; reason: "insufficient" }> {
     // A duplicate token is a test-authoring bug; silently overwriting the
     // first hold would leak its quantity, which a fake must make loud.
     // Expired holds count too (see the header): stricter than Redis here.
-    if (this.holds.has(token)) throw new Error(`token ${token} already holds a reservation`);
-    const current = this.remaining.get(tierId);
-    if (current === undefined || current < qty) return { ok: false, reason: "insufficient" };
-    const hold = Hold.create({
-      token,
-      tierId,
-      qty: Quantity.of(qty),
-      now: this.clock.now(),
-      ttlMs,
-    });
-    const left = current - qty;
-    this.remaining.set(tierId, left);
-    this.holds.set(token, hold);
+    if (this.holds.has(hold.token)) {
+      throw new Error(`token ${hold.token} already holds a reservation`);
+    }
+    const current = this.remaining.get(hold.tierId);
+    if (current === undefined || current < hold.qty.value) {
+      return { ok: false, reason: "insufficient" };
+    }
+    const left = current - hold.qty.value;
+    this.remaining.set(hold.tierId, left);
+    this.holds.set(hold.token, hold);
     return { ok: true, remaining: left };
   }
 
