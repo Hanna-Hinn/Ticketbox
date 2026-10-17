@@ -1,5 +1,11 @@
 import type { ErrorDto } from "@ticketbox/api/src/presentation/dto/errors.js";
 import type { EventDto, EventSummaryDto } from "@ticketbox/api/src/presentation/dto/events.js";
+import type {
+  CreatedHoldDto,
+  CreateHoldDto,
+  HoldDto,
+  ReleaseDto,
+} from "@ticketbox/api/src/presentation/dto/holds.js";
 
 // The only file in packages/web that talks HTTP (enforced by lint). Response
 // types are the API's own DTOs, imported as types only: nothing of the API
@@ -22,14 +28,27 @@ export class ApiError extends Error {
 export interface ApiClient {
   listEvents(signal?: AbortSignal): Promise<EventSummaryDto[]>;
   getEvent(id: string, signal?: AbortSignal): Promise<EventDto>;
+  createHold(input: CreateHoldDto, signal?: AbortSignal): Promise<CreatedHoldDto>;
+  getHold(token: string, signal?: AbortSignal): Promise<HoldDto>;
+  releaseHold(token: string, signal?: AbortSignal): Promise<ReleaseDto>;
 }
 
 type FetchFn = (input: string, init?: RequestInit) => Promise<Response>;
 
 // A factory so tests inject their own fetch; the pages use `api` below.
 export function createApiClient(fetchFn: FetchFn = (input, init) => fetch(input, init)): ApiClient {
-  async function request<T>(path: string, signal: AbortSignal | undefined): Promise<T> {
-    const response = await fetchFn(path, { signal: signal ?? null });
+  async function request<T>(
+    path: string,
+    signal: AbortSignal | undefined,
+    init: { method?: string; body?: unknown } = {},
+  ): Promise<T> {
+    const response = await fetchFn(path, {
+      method: init.method ?? "GET",
+      signal: signal ?? null,
+      ...(init.body === undefined
+        ? {}
+        : { headers: { "content-type": "application/json" }, body: JSON.stringify(init.body) }),
+    });
     if (!response.ok) throw await toApiError(response);
     // The API's Zod serializer guarantees the shape on its side; the browser
     // trusts it rather than shipping the schema.
@@ -39,6 +58,11 @@ export function createApiClient(fetchFn: FetchFn = (input, init) => fetch(input,
   return {
     listEvents: (signal) => request<EventSummaryDto[]>("/api/events", signal),
     getEvent: (id, signal) => request<EventDto>(`/api/events/${encodeURIComponent(id)}`, signal),
+    createHold: (input, signal) =>
+      request<CreatedHoldDto>("/api/holds", signal, { method: "POST", body: input }),
+    getHold: (token, signal) => request<HoldDto>(`/api/holds/${encodeURIComponent(token)}`, signal),
+    releaseHold: (token, signal) =>
+      request<ReleaseDto>(`/api/holds/${encodeURIComponent(token)}`, signal, { method: "DELETE" }),
   };
 }
 

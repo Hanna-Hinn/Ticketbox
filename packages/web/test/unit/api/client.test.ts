@@ -132,3 +132,69 @@ describe("api client", () => {
     await expect(failure).rejects.toBe(down);
   });
 });
+
+describe("api client, the hold calls", () => {
+  const hold = {
+    token: "11111111-1111-4111-8111-aaaaaaaaaaa1",
+    eventId: JAZZ_ID,
+    tierId: "t-1",
+    qty: 2,
+    expiresAt: "2026-12-05T15:29:00.000Z",
+  };
+
+  it("creates a hold with a JSON POST and returns the 201 body", async () => {
+    const seen: RequestInit[] = [];
+    const client = createApiClient((_input, init) => {
+      if (init !== undefined) seen.push(init);
+      return Promise.resolve(
+        new Response(JSON.stringify({ ...hold, remaining: 998 }), { status: 201 }),
+      );
+    });
+
+    const created = await client.createHold({ eventId: JAZZ_ID, tierId: "t-1", qty: 2 });
+
+    expect(created).toEqual({ ...hold, remaining: 998 });
+    expect(seen[0]?.method).toBe("POST");
+    expect(seen[0]?.body).toBe(JSON.stringify({ eventId: JAZZ_ID, tierId: "t-1", qty: 2 }));
+    expect(new Headers(seen[0]?.headers).get("content-type")).toBe("application/json");
+  });
+
+  it("fetches a hold by its encoded token", async () => {
+    const { fetchFn, calls } = fetchAnswering(200, JSON.stringify({ ...hold, remainingMs: 1 }));
+
+    const fetched = await createApiClient(fetchFn).getHold("a/b");
+
+    expect(fetched).toEqual({ ...hold, remainingMs: 1 });
+    expect(calls).toEqual(["/api/holds/a%2Fb"]);
+  });
+
+  it("releases with DELETE and returns the released flag", async () => {
+    const seen: RequestInit[] = [];
+    const client = createApiClient((_input, init) => {
+      if (init !== undefined) seen.push(init);
+      return Promise.resolve(new Response(JSON.stringify({ released: true }), { status: 200 }));
+    });
+
+    const released = await client.releaseHold(hold.token);
+
+    expect(released).toEqual({ released: true });
+    expect(seen[0]?.method).toBe("DELETE");
+    expect(seen[0]?.body).toBeUndefined();
+  });
+
+  it("turns a 409 envelope into an ApiError carrying its code", async () => {
+    const { fetchFn } = fetchAnswering(
+      409,
+      JSON.stringify({ error: { code: "INSUFFICIENT", message: "not enough tickets left" } }),
+    );
+
+    const attempt = createApiClient(fetchFn).createHold({
+      eventId: JAZZ_ID,
+      tierId: "t-1",
+      qty: 2,
+    });
+
+    await expect(attempt).rejects.toMatchObject({ status: 409, code: "INSUFFICIENT" });
+    await expect(attempt).rejects.toBeInstanceOf(ApiError);
+  });
+});
