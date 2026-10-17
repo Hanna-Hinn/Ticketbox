@@ -59,5 +59,18 @@ jobs:
       - run: pnpm migrate
       - run: pnpm seed
       - run: pnpm test:integration
+      # Smoke needs the API itself. It runs in the background against the
+      # same stack and seed; /health gates the suite so a slow boot is a
+      # wait, not a red run. The log file is printed if anything fails.
+      - run: |
+          pnpm --filter @ticketbox/api exec tsx src/main/server.ts > api.log 2>&1 &
+          for i in $(seq 1 30); do
+            curl -sf http://localhost:3000/health && break
+            sleep 1
+          done
+          curl -sf http://localhost:3000/health || { echo "API did not become healthy within 30s"; cat api.log; exit 1; }
+      - run: pnpm test:smoke
       - if: failure()
-        run: docker compose logs
+        run: |
+          docker compose logs
+          cat api.log

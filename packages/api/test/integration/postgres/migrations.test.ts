@@ -15,6 +15,7 @@ const MIGRATION_FILES = [
   "003_holds.sql",
   "004_orders.sql",
   "005_order_items.sql",
+  "006_availability_indexes.sql",
 ];
 
 let client: pg.Client;
@@ -49,6 +50,22 @@ describe("runMigrations", () => {
       "orders",
       "schema_migrations",
       "ticket_tiers",
+    ]);
+  });
+
+  it("creates the availability indexes by name", async () => {
+    await runMigrations(client, migrationsDir);
+
+    const result = await client.query<{ indexname: string }>(
+      `SELECT indexname FROM pg_indexes
+       WHERE tablename IN ('holds', 'order_items') ORDER BY indexname`,
+    );
+
+    expect(result.rows.map((row) => row.indexname)).toEqual([
+      "holds_pkey",
+      "holds_tier_id_status_idx",
+      "order_items_pkey",
+      "order_items_tier_id_idx",
     ]);
   });
 
