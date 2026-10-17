@@ -50,8 +50,10 @@ release_hold.lua
   KEYS[2] tier hash   ticketbox:v1:tier:<tierId>
   KEYS[3] tier holds  ticketbox:v1:tier:<tierId>:holds
   ARGV[1] token
+  ARGV[2] tierId   (amended: the id the adapter read; the script checks it is still the hold's)
 
   if redis.call('EXISTS', KEYS[1]) == 0 then return -1 end        -- gone: expired, swept, already released, never existed
+  if redis.call('HGET', KEYS[1], 'tierId') ~= ARGV[2] then return -1 end   -- (amended) the keys would name the wrong tier
   if redis.call('EXISTS', KEYS[2]) == 0 then return -2 end        -- no counter to give the tickets back to (decision 3)
   local qty = redis.call('HGET', KEYS[1], 'qty')
   local left = redis.call('HINCRBY', KEYS[2], 'remaining', qty)   -- first: the one command that can fail
@@ -60,7 +62,7 @@ release_hold.lua
   return left
 ```
 
-Return contract: `≥ 0` the new remaining (released); `-1` nothing to release (nothing written); `-2` the hold exists but its tier has no counter (nothing written).
+Return contract: `≥ 0` the new remaining (released); `-1` nothing to release, or a tier mismatch (nothing written); `-2` the hold exists but its tier has no counter (nothing written); on an error, nothing written either — the restore runs before the deletes _(amended)_.
 
 **The race it prevents (the header comment):** two releases of the same token — a double click, a client retry, a release racing the sweeper — each `HGET` the quantity, each `HINCRBY` it back: the tier gains the tickets twice and sells seats it does not have, from the other direction. Inside the script the existence check and the restore are one step: the second caller finds no key and restores nothing.
 

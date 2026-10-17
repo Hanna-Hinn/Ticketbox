@@ -2,7 +2,8 @@
 --
 -- THE RACE THIS PREVENTS. The obvious release is three commands from the
 -- client: HGET the quantity, HINCRBY it back, DEL the hold — the same
--- read-then-write shape as TB-021's reserve. Two releases of the same token — a double click, a client retry, a release racing the
+-- read-then-write shape as TB-021's reserve. Two releases of the same
+-- token — a double click, a client retry, a release racing the
 -- sweeper (TB-026) — each read the quantity and each add it back: the tier
 -- gains its tickets twice and oversells from the other direction. In here
 -- the existence check and the restore are one step: the second caller
