@@ -30,6 +30,9 @@ interface TierRow {
 // still counts as held here (under-reports, never over-sells — ADR 0002).
 // SUM over an integer column is bigint, which node-postgres hands back as a
 // string; the ::int cast keeps that out of the mapper.
+// The two sums are disjoint only if TB-029 flips the hold to 'converted' in
+// the same transaction that inserts its order_items. If that is ever split:
+// items first (a transient under-report), never status first (over-report).
 const TIERS_FOR_EVENTS = `
   SELECT t.id, t.event_id, t.name, t.price_cents, t.total_qty,
          GREATEST(0, t.total_qty
@@ -38,7 +41,7 @@ const TIERS_FOR_EVENTS = `
          )::int AS remaining
   FROM ticket_tiers t
   WHERE t.event_id = ANY($1)
-  ORDER BY t.event_id, t.price_cents`;
+  ORDER BY t.event_id, t.price_cents, t.id`;
 
 export class PgEventRepository implements EventRepository {
   // A Pool for the composition root; a ClientBase (Client or PoolClient) so a
