@@ -1,6 +1,6 @@
 # TB-013 — Smoke suite and the performance baseline
 
-**Status:** Approved
+**Status:** Implemented — see [`docs/tasks/TB-013-smoke-and-baseline.md`](../tasks/TB-013-smoke-and-baseline.md) §3 for where reality diverged
 **Date:** 2026-10-17
 **Task:** TB-013 (`docs/02-product-delivery-plan.md`)
 **Branch:** `feat/TB-013-smoke-and-baseline` (stacked on `feat/TB-012-composition-root`)
@@ -79,6 +79,10 @@ The benchmark needs data: against nine tiers and zero holds, Postgres will seque
 5. **`autocannon` targets `GET /events/:id`, not `GET /events`.** `/events/:id` is the page TB-018 caches and TB-022 moves to Redis, so it is the number to compare later. `listUpcoming`'s cost is therefore _not_ measured here (TB-010's task doc flagged this), and the doc says so.
 6. **CI runs smoke in the existing `integration` job**, after seed: start `tsx src/main/server.ts` in the background, wait for `/health`, run `test:smoke`. One job, because smoke needs the same compose stack and seed; the handbook's order (`… → test:integration → test:smoke`) is preserved as step order.
 7. **Numbers are measured in this session's container, and `BENCHMARKS.md` says so.** The file's header names a Windows laptop; TB-013's rows get their own machine line (vCPUs, RAM, Postgres 16 running locally rather than in Docker). A number without its machine is a number without meaning.
+8. _(review)_ **The CI health wait fails the step itself** when the API never boots, printing `api.log`; otherwise the failure lands in `test:smoke` as ECONNREFUSED and is misattributed.
+9. _(review)_ **The partial covering index `holds (tier_id) INCLUDE (qty) WHERE status = 'active'` is the real alternative to decision 2**, argued both ways in `BENCHMARKS.md` §1 and left for TB-022 to measure; `CLUSTER` was the wrong thing to name.
+10. _(review)_ **`migrations.test.ts` asserts the two index names**, not just the file count — a recorded migration creating the wrong index was otherwise invisible to every test.
+11. _(review)_ **autocannon's printed "requests" is requests _sent_, abbreviated**; only `req/s`, the latency percentiles and the mean are recorded.
 
 ### New or changed ports / Redis keys / Lua scripts
 
