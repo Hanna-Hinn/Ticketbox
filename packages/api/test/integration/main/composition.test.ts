@@ -48,6 +48,26 @@ describe("compose", () => {
     );
   });
 
+  it("reports Redis down within the health bound and still closes promptly", async () => {
+    const degraded = compose({
+      DATABASE_URL: testDatabaseUrl(),
+      REDIS_URL: "redis://localhost:6390",
+      PORT: 0,
+      LOG_LEVEL: "silent",
+    });
+
+    const response = await degraded.app.inject({ url: "/health" });
+    const started = Date.now();
+    await degraded.close();
+
+    expect(response.statusCode).toBe(503);
+    expect(response.json()).toEqual({
+      status: "degraded",
+      checks: { postgres: "ok", redis: "down" },
+    });
+    expect(Date.now() - started).toBeLessThan(1_000);
+  });
+
   it("closes idempotently", async () => {
     const extra = compose({
       DATABASE_URL: testDatabaseUrl(),

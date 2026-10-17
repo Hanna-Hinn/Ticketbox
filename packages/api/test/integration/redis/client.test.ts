@@ -2,15 +2,25 @@ import { once } from "node:events";
 import type { Redis } from "ioredis";
 import pino from "pino";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
-import { createRedisClient } from "../../../src/infrastructure/redis/client.js";
+import { closeRedisClient, createRedisClient } from "../../../src/infrastructure/redis/client.js";
 import { connectToTestRedis, testRedisUrl } from "../support/redis.js";
 
 // A logger whose output the test can read: the lifecycle lines are the
-// deliverable, not a side effect.
+// deliverable, not a side effect. Note on node:events' once(): it rejects if
+// an "error" event fires first, so awaiting "ready" or "reconnecting" on a
+// dead port would throw — await "error" there.
 function capturingLogger(): { log: pino.Logger; lines: string[] } {
   const lines: string[] = [];
   const log = pino({ level: "info" }, { write: (chunk: string) => void lines.push(chunk) });
   return { log, lines };
+}
+
+// A closed port on the same host; a filtered one would hit ioredis's 10 s
+// connectTimeout instead and the test would time out.
+function deadPortUrl(): string {
+  const url = new URL(testRedisUrl());
+  url.port = "6390";
+  return url.toString();
 }
 
 let admin: Redis;
@@ -31,8 +41,7 @@ describe("createRedisClient", () => {
   let client: Redis;
 
   afterEach(async () => {
-    // The dead-port test disconnects its own client; quit() after that rejects.
-    if (client.status !== "end") await client.quit();
+    await closeRedisClient(client);
   });
 
   it("connects and answers a ping", async () => {
@@ -76,19 +85,27 @@ describe("createRedisClient", () => {
     expect(lines.filter((line) => line.includes("redis ready"))).toHaveLength(2);
   });
 
-  it("logs a connection error, structured and without the command's arguments", async () => {
+  it("logs a connection error with its reason, and never a command's arguments", async () => {
     const { log, lines } = capturingLogger();
-    // A closed port on the same host; a filtered one would hit ioredis's
-    // 10 s connectTimeout instead and this test would time out.
-    const dead = new URL(testRedisUrl());
-    dead.port = "6390";
-    client = createRedisClient(dead.toString(), log);
+    client = createRedisClient(deadPortUrl(), log);
 
     await once(client, "error");
-    client.disconnect();
 
+    // On a host where localhost has two address families the error is an
+    // AggregateError with an empty message; the reason must still be logged.
     const errorLine = lines.find((line) => line.includes("redis error"));
     expect(errorLine).toContain("ECONNREFUSED");
     expect(errorLine).not.toContain('"command"');
+  });
+
+  it("closes at once while Redis is unreachable, even with a command queued", async () => {
+    client = createRedisClient(deadPortUrl(), pino({ level: "silent" }));
+    void client.ping().catch(() => undefined);
+    await once(client, "error");
+
+    const started = Date.now();
+    await closeRedisClient(client);
+
+    expect(Date.now() - started).toBeLessThan(1_000);
   });
 });
