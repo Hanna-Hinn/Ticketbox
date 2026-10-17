@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, test, type APIRequestContext } from "@playwright/test";
 
 // Handbook §4.1 E2E-3: get tickets, let the timer run out, and the number
 // comes back without anyone doing anything — the TTL drops the hold, the
@@ -14,12 +14,21 @@ const SWEEP_MARGIN_MS = 20_000;
 
 let token: string | undefined;
 
+// The body is unknown until it is looked at (the smoke suite's pattern); a
+// 404 envelope has no remainingMs and comes out NaN, which fails the assertion.
+async function remainingMsOf(request: APIRequestContext, held: string): Promise<number> {
+  const body: unknown = await (await request.get(`/api/holds/${held}`)).json();
+  return typeof body === "object" && body !== null && "remainingMs" in body
+    ? Number(body.remainingMs)
+    : Number.NaN;
+}
+
 test.beforeEach(() => {
   token = undefined;
 });
 
 // A no-op on this spec — the sweeper took the hold — and a safety net if
-// the spec dies before it did.
+// the spec dies before the TTL does (after it, only the sweeper restores).
 test.afterEach(async ({ request }) => {
   if (token !== undefined) await request.delete(`/api/holds/${token}`);
 });
@@ -36,22 +45,22 @@ test("the timer runs out and the number comes back by itself", async ({ page, re
   await general.getByTestId("get-tickets").click();
   await expect(page).toHaveURL(CHECKOUT);
   token = CHECKOUT.exec(page.url())?.[1];
+  if (token === undefined) throw new Error(`no token in ${page.url()}`);
   await expect(page.getByTestId("countdown")).toBeVisible();
 
   // The server says how long the hold has; the spec waits that long, plus
   // the margins, and no longer.
-  const hold = await (await request.get(`/api/holds/${token}`)).json();
-  const remainingMs = Number((hold as { remainingMs: number }).remainingMs);
+  const remainingMs = await remainingMsOf(request, token);
   expect(remainingMs).toBeGreaterThan(0);
   test.setTimeout(remainingMs + SWEEP_MARGIN_MS + 30_000);
 
-  // (c) nobody clicks: the countdown reaches zero, asks, is told the hold
-  // is gone.
+  // Nobody clicks: the countdown reaches zero, asks, is told the hold is
+  // gone.
   await expect(page.getByTestId("hold-gone")).toBeVisible({ timeout: remainingMs + 5_000 });
   expect(deletes).toEqual([]);
 
-  // (d) and the number is back — the sweeper's doing, seen from a fresh
-  // read of the page (the page does not update itself until TB-038).
+  // And the number is back — the sweeper's doing, seen from a fresh read of
+  // the page (the page does not update itself until TB-038).
   await expect
     .poll(
       async () => {
