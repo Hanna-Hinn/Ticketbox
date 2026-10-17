@@ -14,6 +14,7 @@ import { aHold } from "../../fakes/builders.js";
 import { FakeClock } from "../../fakes/FakeClock.js";
 import { InMemoryCacheStats } from "../../fakes/InMemoryCacheStats.js";
 import { InMemoryEventRepository } from "../../fakes/InMemoryEventRepository.js";
+import { InMemoryHoldRepository } from "../../fakes/InMemoryHoldRepository.js";
 import { InMemoryHoldStore } from "../../fakes/InMemoryHoldStore.js";
 
 // The route, the controller and the use case over the in-memory store: no
@@ -43,7 +44,7 @@ async function serverWithHold(): Promise<{ app: FastifyInstance; holds: InMemory
   app = buildServer({
     logger: pino({ level: "silent" }),
     events: unusedEvents,
-    holds: new HoldController(new ReleaseHoldUseCase(holds)),
+    holds: new HoldController(new ReleaseHoldUseCase(holds, new InMemoryHoldRepository())),
     stats: unusedStats,
     checks: { postgres: ok, redis: ok },
   });

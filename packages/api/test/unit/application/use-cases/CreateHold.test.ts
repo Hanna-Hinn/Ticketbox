@@ -9,6 +9,7 @@ import { aTier, anEvent, DEFAULT_EVENT_ID } from "../../../fakes/builders.js";
 import { FakeClock } from "../../../fakes/FakeClock.js";
 import { FixedTokenGenerator } from "../../../fakes/FixedTokenGenerator.js";
 import { InMemoryEventRepository } from "../../../fakes/InMemoryEventRepository.js";
+import { InMemoryHoldRepository } from "../../../fakes/InMemoryHoldRepository.js";
 import { InMemoryHoldStore } from "../../../fakes/InMemoryHoldStore.js";
 import { stubHoldStore } from "../../../fakes/stubHoldStore.js";
 
@@ -28,8 +29,9 @@ function world(opts: { remaining?: number; ttlMs?: number; clock?: FakeClock } =
   const holds = new InMemoryHoldStore(clock);
   holds.seed(TIER, remaining);
   const tokens = new FixedTokenGenerator(["tok-1", "tok-2", "tok-3"]);
-  const useCase = new CreateHoldUseCase(events, holds, clock, tokens, opts.ttlMs ?? TTL_MS);
-  return { useCase, holds, clock };
+  const mirror = new InMemoryHoldRepository();
+  const useCase = new CreateHoldUseCase(events, holds, mirror, clock, tokens, opts.ttlMs ?? TTL_MS);
+  return { useCase, holds, mirror, clock };
 }
 
 const request = { eventId: DEFAULT_EVENT_ID, tierId: TIER, qty: 2 };
@@ -67,6 +69,7 @@ describe("CreateHoldUseCase", () => {
     const useCase = new CreateHoldUseCase(
       events,
       store,
+      new InMemoryHoldRepository(),
       clock,
       new FixedTokenGenerator(["tok-1"]),
       TTL_MS,
@@ -92,12 +95,62 @@ describe("CreateHoldUseCase", () => {
   });
 
   it("rejects a hold larger than remaining inventory and leaves it untouched", async () => {
-    const { useCase, holds } = world({ remaining: 1 });
+    const { useCase, holds, mirror } = world({ remaining: 1 });
 
     const result = await useCase.execute({ ...request, qty: 2 });
 
     expect(result).toEqual({ ok: false, reason: "insufficient" });
     expect(await holds.availability([TIER])).toEqual(new Map([[TIER, 1]]));
+    expect(mirror.rows.size).toBe(0);
+  });
+
+  it("mirrors the hold it reserved as an active row, after the store has decided", async () => {
+    const { useCase, mirror } = world({ remaining: 10 });
+
+    await useCase.execute(request);
+
+    const row = mirror.rows.get(holdToken("tok-1"));
+    expect(row?.status).toBe("active");
+    expect(row?.hold.tierId).toBe(TIER);
+    expect(row?.hold.qty.value).toBe(2);
+    expect(row?.hold.expiresAt).toEqual(new Date("2026-01-01T10:02:00.000Z"));
+  });
+
+  it("asks the store before it writes the row, never the other way round", async () => {
+    // A row written first would record holds the store then refuses.
+    const calls: string[] = [];
+    const clock = new FakeClock("2026-01-01T10:00:00.000Z");
+    const events = new InMemoryEventRepository([
+      anEvent()
+        .withTiers([aTier().withRemaining(10).build()])
+        .build(),
+    ]);
+    const store = stubHoldStore({
+      reserve: async () => {
+        calls.push("reserve");
+        return { ok: true, remaining: 8 };
+      },
+    });
+    const mirror = new InMemoryHoldRepository();
+    const recordingMirror = {
+      save: async (hold: Hold): Promise<void> => {
+        calls.push("save");
+        await mirror.save(hold);
+      },
+      setStatus: mirror.setStatus.bind(mirror),
+    };
+    const useCase = new CreateHoldUseCase(
+      events,
+      store,
+      recordingMirror,
+      clock,
+      new FixedTokenGenerator(["tok-1"]),
+      TTL_MS,
+    );
+
+    await useCase.execute(request);
+
+    expect(calls).toEqual(["reserve", "save"]);
   });
 
   it("allows a hold for exactly the remaining inventory, leaving zero", async () => {
@@ -138,11 +191,12 @@ describe("CreateHoldUseCase", () => {
   });
 
   it.each([0, 11])("rejects a quantity of %i before touching anything", async (qty) => {
-    const { useCase, holds } = world();
+    const { useCase, holds, mirror } = world();
 
     await expect(useCase.execute({ ...request, qty })).rejects.toThrow(InvalidQuantity);
 
     expect(await holds.availability([TIER])).toEqual(new Map([[TIER, 10]]));
+    expect(mirror.rows.size).toBe(0);
   });
 
   it("rejects a misconfigured ttl without reserving anything", async () => {

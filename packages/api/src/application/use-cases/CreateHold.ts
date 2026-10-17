@@ -4,6 +4,7 @@ import type { EventId, TierId } from "../../domain/value-objects/Ids.js";
 import { Quantity } from "../../domain/value-objects/Quantity.js";
 import type { Clock } from "../ports/Clock.js";
 import type { EventRepository } from "../ports/EventRepository.js";
+import type { HoldRepository } from "../ports/HoldRepository.js";
 import type { HoldStore } from "../ports/HoldStore.js";
 import type { TokenGenerator } from "../ports/TokenGenerator.js";
 
@@ -23,6 +24,7 @@ export class CreateHoldUseCase {
   constructor(
     private readonly events: EventRepository,
     private readonly holds: HoldStore,
+    private readonly mirror: HoldRepository,
     private readonly clock: Clock,
     private readonly tokens: TokenGenerator,
     private readonly holdTtlMs: number,
@@ -51,6 +53,13 @@ export class CreateHoldUseCase {
     // is how a stale one ends up winning.
     const reserved = await this.holds.reserve(hold);
     if (!reserved.ok) return { ok: false, reason: "insufficient" };
+
+    // The row follows the decision, never leads it (ADR 0004): a row written
+    // first would record holds the store then refuses. If this write fails
+    // the hold still exists, with no row; the TTL bounds it and the sweeper
+    // restores it. No compensating release — a second write to undo the
+    // first, in the same request, can fail too.
+    await this.mirror.save(hold);
 
     return { ok: true, token, expiresAt: hold.expiresAt, remaining: reserved.remaining };
   }

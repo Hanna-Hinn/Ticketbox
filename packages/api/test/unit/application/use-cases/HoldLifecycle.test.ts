@@ -8,6 +8,7 @@ import { aTier, anEvent, DEFAULT_EVENT_ID } from "../../../fakes/builders.js";
 import { FakeClock } from "../../../fakes/FakeClock.js";
 import { FixedTokenGenerator } from "../../../fakes/FixedTokenGenerator.js";
 import { InMemoryEventRepository } from "../../../fakes/InMemoryEventRepository.js";
+import { InMemoryHoldRepository } from "../../../fakes/InMemoryHoldRepository.js";
 import { InMemoryHoldStore } from "../../../fakes/InMemoryHoldStore.js";
 
 const TTL_MS = 120_000;
@@ -25,17 +26,20 @@ describe("a hold's lifecycle", () => {
     ]);
     const holds = new InMemoryHoldStore(clock);
     holds.seed(TIER, 10);
+    const mirror = new InMemoryHoldRepository();
     const create = new CreateHoldUseCase(
       events,
       holds,
+      mirror,
       clock,
       new FixedTokenGenerator(["tok-1"]),
       TTL_MS,
     );
     const get = new GetHoldUseCase(holds, clock);
-    const release = new ReleaseHoldUseCase(holds);
+    const release = new ReleaseHoldUseCase(holds, mirror);
 
     const created = await create.execute({ eventId: DEFAULT_EVENT_ID, tierId: TIER, qty: 3 });
+    const mirroredAs = mirror.statusOf(holdToken("tok-1"));
     const fresh = await get.execute({ token: holdToken("tok-1") });
     clock.advance(30_000);
     const later = await get.execute({ token: holdToken("tok-1") });
@@ -52,6 +56,8 @@ describe("a hold's lifecycle", () => {
     expect(afterwards).toEqual({ ok: false, reason: "not-found" });
     expect(again).toEqual({ released: false });
     expect(await holds.availability([TIER])).toEqual(new Map([[TIER, 10]]));
+    expect(mirroredAs).toBe("active");
+    expect(mirror.statusOf(holdToken("tok-1"))).toBe("released");
   });
 
   it("left alone, expires: gone to the client, but its tickets are not back until swept", async () => {
@@ -66,6 +72,7 @@ describe("a hold's lifecycle", () => {
     const create = new CreateHoldUseCase(
       events,
       holds,
+      new InMemoryHoldRepository(),
       clock,
       new FixedTokenGenerator(["tok-1"]),
       TTL_MS,
