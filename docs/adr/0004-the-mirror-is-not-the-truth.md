@@ -43,6 +43,6 @@ None of these can over-sell on the live path: `reserve` decides against the live
 
 **What would make us revisit this:**
 
-- TB-029 needing `orders` + `order_items` + the hold's `converted` in one transaction (TB-007 decision 10): the row is then written inside a Postgres transaction the order owns, and this ADR's "after Redis" rule applies to the whole transaction.
+- TB-029 needing `orders` + `order_items` + the hold's `converted` in one transaction (TB-007 decision 10): the row is then written inside a Postgres transaction the order owns, and this ADR's "after Redis" rule applies to the whole transaction. _It did (ADR 0007): `PgOrderRepository.save` flips the row first and requires exactly one active one; a hold the mirror never recorded cannot be confirmed._
 - TB-027 finding that reconcile needs the row to be _more_ than a mirror — e.g. an `expires_at` check of its own — then the row grows a read path and this ADR's "nothing reads it on the hot path" needs a line about which reads. _It did, a little: `HoldRepository.activeTokens(tierId)` is the row's one read path, for reconciliation only and off the hot path; no `expires_at` check — what is held is still the store's index to say (ADR 0006)._
 - A real write path to events (an edit, a cancellation) that must invalidate holds: that would be the first time Postgres led and Redis followed.

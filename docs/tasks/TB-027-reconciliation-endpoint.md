@@ -161,7 +161,7 @@ Enumerate the combinations before writing the rule. "Not in the index means gone
 ## 8. Follow-ups left behind
 
 - [ ] TB-028 (SPIKE): the `FLUSHDB` drill with 20 holds, now with an endpoint to call afterwards; and keyspace notifications.
-- [ ] TB-029: consuming a hold's hash and removing its index entry must be one step (ADR 0006); whether a converting hold with no row gets one is TB-029's call.
+- [x] TB-029: consuming a hold's hash and removing its index entry must be one step (ADR 0006); whether a converting hold with no row gets one is TB-029's call. _One script; no row (ADR 0007). Found there: `rowsExpired` over-counts by one when a confirm's row lock wins the race against reconcile's UPDATE — the report, not the repair._
 - [ ] TB-031: the lock that could close decision 2's windows.
 - [ ] TB-032: `/_admin/*` is unauthenticated and unlimited; a rate limit is the first fence.
 - [ ] The per-tier `find` in step (c) is one round trip per drifted row; measure if an event ever has thousands of drifted rows.

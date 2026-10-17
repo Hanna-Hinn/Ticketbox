@@ -1,6 +1,6 @@
 # TB-029 — ConfirmOrder use case
 
-**Status:** Approved
+**Status:** Implemented — see [`docs/tasks/TB-029-confirm-order.md`](../tasks/TB-029-confirm-order.md)
 **Date:** 2026-10-17
 **Task:** TB-029 (`docs/02-product-delivery-plan.md`)
 **Branch:** `feat/TB-029-confirm-order` (stacked on `feat/TB-028a-e2e-expiry-journey`)
@@ -184,7 +184,15 @@ None blocking. Decision 1 (Redis first) and decision 3 (no row, no order) are th
 
 ## 9. Documentation this task will produce
 
-- ☐ ADR — `docs/adr/0007-redis-consumes-before-postgres-records.md` — decisions 1–3
-- ☐ Task doc — `docs/tasks/TB-029-confirm-order.md`
+- ☑ ADR — `docs/adr/0007-redis-consumes-before-postgres-records.md` — decisions 1–3
+- ☑ Task doc — `docs/tasks/TB-029-confirm-order.md`
 - ☐ Benchmark entry — nothing measurable changed
 - ☐ NOTES entry — not a SPIKE task
+
+---
+
+## 10. Amendments after implementation
+
+- **Decision 5** gained the entity's expiry check; **decision 2** moved the flip first; **§6** gained the burned-hold and the reconcile-race windows — all in review and marked in place above.
+- **§5:** the confirm-vs-sweep race is issued in both orders directly against the scripts, after a sabotage showed the adapter version only ever let the sweep win; the smoke order lands on the second seed event.
+- **§4:** no file outside the list; the migrations test gained 007.
