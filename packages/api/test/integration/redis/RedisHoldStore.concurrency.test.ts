@@ -7,6 +7,8 @@ import { RedisHoldStore } from "../../../src/infrastructure/redis/RedisHoldStore
 import { keys } from "../../../src/infrastructure/redis/keys.js";
 import { aHold } from "../../fakes/builders.js";
 import { connectToTestRedis } from "../support/redis.js";
+import { ReleaseExpiredHoldsUseCase } from "../../../src/application/use-cases/ReleaseExpiredHolds.js";
+import { InMemoryHoldRepository } from "../../fakes/InMemoryHoldRepository.js";
 
 // The TB-021 test, kept. The naive store answered 200 of 200 and left the
 // counter at -390 (docs/NOTES.md); the script must answer exactly 5 and
@@ -53,6 +55,49 @@ describe("200 concurrent reserves of 2 against a tier with 10 remaining", () => 
       // A glob through the registry: the only way it offers to build a
       // pattern; a keys.holdPattern() is TB-040's (KEYS vs SCAN).
       expect(await redis.keys(keys.hold(holdToken("*")))).toHaveLength(5);
+    },
+  );
+});
+
+// Two worker processes, or a tick overlapping the next: both list the same
+// ten expired holds and both sweep them. The index entry is the receipt;
+// the counter must land on exactly 1000, ten times in a row.
+describe("two sweepers over the same 10 expired holds", () => {
+  it.each(Array.from({ length: 10 }, (_, i) => i + 1))(
+    "restore each hold exactly once, between them, and mark every row expired (run %i)",
+    async () => {
+      await redis.hset(keys.tier(TIER), "remaining", 1000);
+      const createdAt = new Date("2026-01-01T10:00:00.000Z");
+      const holds = Array.from({ length: 10 }, (_, i) =>
+        aHold()
+          .forTier(TIER)
+          .withToken(`tok-${i}`)
+          .withQty(1)
+          .createdAt(createdAt)
+          .withTtl(1)
+          .build(),
+      );
+      const mirror = new InMemoryHoldRepository();
+      for (const hold of holds) {
+        await store.reserve(hold);
+        await mirror.save(hold);
+      }
+      const otherClient = await connectToTestRedis();
+      const otherStore = new RedisHoldStore(otherClient, pino({ level: "silent" }));
+      const clock = { now: (): Date => new Date() };
+      const sweepers = [
+        new ReleaseExpiredHoldsUseCase(store, mirror, clock),
+        new ReleaseExpiredHoldsUseCase(otherStore, mirror, clock),
+      ];
+
+      const results = await Promise.all(sweepers.map((sweeper) => sweeper.execute()));
+
+      expect(results.reduce((sum, result) => sum + result.restored, 0)).toBe(10);
+      expect(results.every((result) => result.unmarked.length === 0)).toBe(true);
+      expect(await redis.hget(keys.tier(TIER), "remaining")).toBe("1000");
+      expect(await redis.zcard(keys.tierHolds(TIER))).toBe(0);
+      expect(holds.every((hold) => mirror.statusOf(hold.token) === "expired")).toBe(true);
+      await otherClient.quit();
     },
   );
 });

@@ -66,6 +66,8 @@ The script is registered with ioredis's `defineCommand` in the adapter's constru
 | `ticketbox:v1:hold:<token>`        | hash | `PEXPIRE ttlMs`         | `create_hold.lua`                                   | `find`; the script's replay guard; TB-023 |
 | `ticketbox:v1:tier:<tierId>:holds` | zset | none                    | `create_hold.lua` (`ZADD` score = `expiresAt`)      | the sweeper (TB-026)                      |
 
+_TB-026 changed the member from the bare token to `\"<token>:<qty>\"` (ADR 0005): the hash does not outlive the hold, the index must._
+
 All three were reserved in `keys.ts` by TB-017; this task is the first writer.
 
 ### Lua scripts introduced

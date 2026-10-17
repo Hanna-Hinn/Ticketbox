@@ -7,7 +7,7 @@ import { holdToken } from "../../../src/domain/value-objects/HoldToken.js";
 import { tierId } from "../../../src/domain/value-objects/Ids.js";
 import { RedisHoldStore } from "../../../src/infrastructure/redis/RedisHoldStore.js";
 import { keys } from "../../../src/infrastructure/redis/keys.js";
-import { CREATE_HOLD_LUA } from "../../../src/infrastructure/redis/scripts.js";
+import { CREATE_HOLD_LUA, SWEEP_HOLD_LUA } from "../../../src/infrastructure/redis/scripts.js";
 import { aHold } from "../../fakes/builders.js";
 import { connectToTestRedis, testRedisUrl } from "../support/redis.js";
 
@@ -61,7 +61,9 @@ describe("RedisHoldStore.reserve (create_hold.lua)", () => {
       createdAt: String(hold.createdAt.getTime()),
       expiresAt: String(hold.expiresAt.getTime()),
     });
-    expect(await redis.zscore(keys.tierHolds(TIER), hold.token)).toBe(
+    // The member carries the quantity: the hash will not outlive the hold,
+    // the index must (TB-026).
+    expect(await redis.zscore(keys.tierHolds(TIER), `${hold.token}:2`)).toBe(
       String(hold.expiresAt.getTime()),
     );
   });
@@ -262,6 +264,215 @@ describe("RedisHoldStore.find", () => {
   });
 });
 
+// A hold whose score is in the past and whose hash is gone — what the sweeper
+// finds. Written through the real script with a tiny TTL, then polled gone.
+async function expiredHold(qty: number, token: string, tier = TIER): Promise<void> {
+  await store.reserve(
+    aHold().forTier(tier).withToken(token).withQty(qty).createdAt(CREATED).withTtl(50).build(),
+  );
+  const key = keys.hold(holdToken(token));
+  const deadline = Date.now() + 2_000;
+  while ((await redis.exists(key)) === 1 && Date.now() < deadline) {
+    await new Promise((resolve) => setTimeout(resolve, 5));
+  }
+}
+
+describe("RedisHoldStore.expired", () => {
+  it("lists every hold at or before now, across tiers, with its own tier and quantity, and none after", async () => {
+    await redis.hset(keys.tier(TIER), "remaining", 10);
+    await redis.hset(keys.tier(OTHER), "remaining", 10);
+    const now = new Date(CREATED).getTime() + TTL_MS;
+    await store.reserve(held(2, "tok-exact")); // expires exactly at now
+    await store.reserve(
+      aHold().forTier(OTHER).withToken("tok-other").withQty(3).createdAt(CREATED).build(),
+    );
+    await store.reserve(held(1, "tok-alive", TTL_MS + 1)); // one ms later
+
+    const listed = await store.expired(new Date(now));
+
+    expect(listed.map((hold) => [hold.token, hold.tierId, hold.qty]).sort()).toEqual([
+      ["tok-exact", TIER, 2],
+      ["tok-other", OTHER, 3],
+    ]);
+  });
+
+  it("still lists a hold whose hash has expired — the index is what outlives the hold", async () => {
+    await redis.hset(keys.tier(TIER), "remaining", 10);
+    await expiredHold(2, "tok-gone");
+
+    const listed = await store.expired(new Date());
+
+    expect(await redis.exists(keys.hold(holdToken("tok-gone")))).toBe(0);
+    expect(listed).toEqual([{ token: holdToken("tok-gone"), tierId: TIER, qty: 2 }]);
+  });
+
+  it("removes an entry it cannot read, warns once, and does not list it", async () => {
+    // A bare token from before the member carried qty, and a member that
+    // decodes but does not re-encode to itself: neither can be swept, and
+    // an entry listed and refused every tick is a silent loop.
+    const past = new Date(CREATED).getTime();
+    await redis.zadd(keys.tierHolds(TIER), String(past), "tok-old", String(past), "tok-odd:02");
+
+    const listed = await store.expired(new Date());
+
+    expect(listed).toEqual([]);
+    expect(await redis.zcard(keys.tierHolds(TIER))).toBe(0);
+    expect(warnings).toHaveLength(2);
+    expect(warnings.every((line) => line.includes("unreadable index entry"))).toBe(true);
+  });
+
+  it("skips, and warns about, an index key the registry cannot parse", async () => {
+    // The scan's pattern and the parser have to agree; if they drift, a
+    // sweeper that finds nothing must not be silent.
+    await redis.zadd("ticketbox:v1:tier:a:b:holds", 1, "tok-x:1");
+
+    const listed = await store.expired(new Date());
+
+    expect(listed).toEqual([]);
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0]).toContain("does not parse");
+  });
+
+  it("fails fast on a client that is not connected", async () => {
+    const disconnected = new Redis(testRedisUrl(), { lazyConnect: true });
+    const offline = new RedisHoldStore(disconnected, pino({ level: "silent" }));
+
+    await expect(offline.expired(new Date())).rejects.toThrow(/cannot list expired holds/);
+    disconnected.disconnect();
+  });
+});
+
+describe("RedisHoldStore.sweep (sweep_hold.lua)", () => {
+  it("restores the exact quantity, removes the index entry and the hash, and answers the new count", async () => {
+    await redis.hset(keys.tier(TIER), "remaining", 10);
+    await expiredHold(2, "tok-gone"); // 10 → 8, and the hash is gone
+
+    const result = await store.sweep(
+      { token: holdToken("tok-gone"), tierId: TIER, qty: 2 },
+      new Date(),
+    );
+
+    expect(result).toEqual({ swept: true, restored: true, remaining: 10 });
+    expect(await redis.hget(keys.tier(TIER), "remaining")).toBe("10");
+    expect(await redis.zcard(keys.tierHolds(TIER))).toBe(0);
+    expect(await redis.exists(keys.hold(holdToken("tok-gone")))).toBe(0);
+  });
+
+  it("sweeping twice restores once", async () => {
+    await redis.hset(keys.tier(TIER), "remaining", 10);
+    await expiredHold(2, "tok-gone");
+    const entry = { token: holdToken("tok-gone"), tierId: TIER, qty: 2 };
+
+    const first = await store.sweep(entry, new Date());
+    const second = await store.sweep(entry, new Date());
+
+    expect(first).toEqual({ swept: true, restored: true, remaining: 10 });
+    expect(second).toEqual({ swept: false });
+    expect(await redis.hget(keys.tier(TIER), "remaining")).toBe("10");
+  });
+
+  it("sweeps a hold whose hash still lingers, taking the hash with it", async () => {
+    // TTL lag: the score is past, the key not yet reclaimed. The sweep does
+    // not depend on the hash being gone.
+    await redis.hset(keys.tier(TIER), "remaining", 10);
+    const hold = held(2);
+    await store.reserve(hold);
+    const atExpiry = new Date(hold.expiresAt.getTime());
+
+    const result = await store.sweep({ token: hold.token, tierId: TIER, qty: 2 }, atExpiry);
+
+    expect(result).toEqual({ swept: true, restored: true, remaining: 10 });
+    expect(await redis.exists(keys.hold(hold.token))).toBe(0);
+  });
+
+  it("refuses a hold that is not expired yet, warns, and writes nothing", async () => {
+    await redis.hset(keys.tier(TIER), "remaining", 10);
+    const hold = held(2);
+    await store.reserve(hold);
+    const oneMsEarly = new Date(hold.expiresAt.getTime() - 1);
+
+    const result = await store.sweep({ token: hold.token, tierId: TIER, qty: 2 }, oneMsEarly);
+
+    expect(result).toEqual({ swept: false });
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0]).toContain("not expired");
+    expect(await redis.hget(keys.tier(TIER), "remaining")).toBe("8");
+    expect(await redis.zcard(keys.tierHolds(TIER))).toBe(1);
+    expect(await redis.exists(keys.hold(hold.token))).toBe(1);
+  });
+
+  it("answers swept but not restored when the tier has no counter: entry removed, no counter invented, warn", async () => {
+    await redis.hset(keys.tier(TIER), "remaining", 10);
+    await expiredHold(2, "tok-gone");
+    await redis.del(keys.tier(TIER));
+
+    const result = await store.sweep(
+      { token: holdToken("tok-gone"), tierId: TIER, qty: 2 },
+      new Date(),
+    );
+
+    expect(result).toEqual({ swept: true, restored: false });
+    expect(await redis.exists(keys.tier(TIER))).toBe(0);
+    expect(await redis.zcard(keys.tierHolds(TIER))).toBe(0);
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0]).toContain("without restoring");
+  });
+
+  it("throws on a counter that is not an integer, and has touched nothing", async () => {
+    // The restore runs before the removes: an entry removed first would be
+    // the sweeper's only trace of the tickets, gone with the error.
+    await redis.hset(keys.tier(TIER), "remaining", 8);
+    await expiredHold(2, "tok-gone");
+    await redis.hset(keys.tier(TIER), "remaining", "eight");
+
+    await expect(
+      store.sweep({ token: holdToken("tok-gone"), tierId: TIER, qty: 2 }, new Date()),
+    ).rejects.toThrow(/not an integer/);
+
+    expect(await redis.hget(keys.tier(TIER), "remaining")).toBe("eight");
+    expect(await redis.zcard(keys.tierHolds(TIER))).toBe(1);
+  });
+
+  it("finds nothing to sweep after a release took the same hold", async () => {
+    await redis.hset(keys.tier(TIER), "remaining", 10);
+    const hold = held(2);
+    await store.reserve(hold);
+    const atExpiry = new Date(hold.expiresAt.getTime());
+
+    const released = await store.release(hold.token);
+    const swept = await store.sweep({ token: hold.token, tierId: TIER, qty: 2 }, atExpiry);
+
+    expect(released).toEqual({ released: true, tierId: TIER, remaining: 10 });
+    expect(swept).toEqual({ swept: false });
+    expect(await redis.hget(keys.tier(TIER), "remaining")).toBe("10");
+  });
+
+  it("leaves nothing to release after a sweep took the same hold", async () => {
+    await redis.hset(keys.tier(TIER), "remaining", 10);
+    const hold = held(2);
+    await store.reserve(hold);
+    const atExpiry = new Date(hold.expiresAt.getTime());
+
+    const swept = await store.sweep({ token: hold.token, tierId: TIER, qty: 2 }, atExpiry);
+    const released = await store.release(hold.token);
+
+    expect(swept).toEqual({ swept: true, restored: true, remaining: 10 });
+    expect(released).toEqual({ released: false });
+    expect(await redis.hget(keys.tier(TIER), "remaining")).toBe("10");
+  });
+
+  it("is cached on the server after the first call (EVALSHA from then on)", async () => {
+    await redis.script("FLUSH");
+    await redis.hset(keys.tier(TIER), "remaining", 10);
+    await expiredHold(2, "tok-gone");
+    const sha = createHash("sha1").update(SWEEP_HOLD_LUA).digest("hex");
+
+    await store.sweep({ token: holdToken("tok-gone"), tierId: TIER, qty: 2 }, new Date());
+
+    expect(await redis.script("EXISTS", sha)).toEqual([1]);
+  });
+});
+
 describe("RedisHoldStore.availability", () => {
   it("returns the live count of every seeded tier and nothing for the rest", async () => {
     await redis.hset(keys.tier(TIER), "remaining", 7);
@@ -326,6 +537,16 @@ describe("RedisHoldStore.release (release_hold.lua)", () => {
 
     expect(result).toEqual({ released: false });
     expect(await redis.hget(keys.tier(TIER), "remaining")).toBe("10");
+  });
+
+  it("removes the composite index entry, not a bare token", async () => {
+    await redis.hset(keys.tier(TIER), "remaining", 10);
+    const hold = held(2);
+    await store.reserve(hold);
+
+    await store.release(hold.token);
+
+    expect(await redis.zrange(keys.tierHolds(TIER), "0", "-1")).toEqual([]);
   });
 
   it("does not restore an expired hold: that is the sweeper's, and its index entry stays for it", async () => {

@@ -26,7 +26,7 @@ pnpm migrate
 pnpm seed
 
 pnpm dev:api                # terminal 1 — http://localhost:3000
-pnpm dev:worker             # terminal 2 — stream consumer
+pnpm dev:worker             # terminal 2 — the expired-hold sweeper (TB-026); the stream consumer joins it later
 pnpm dev:web                # terminal 3 — http://localhost:5173
 ```
 

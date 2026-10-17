@@ -14,6 +14,7 @@
     "migrate": "pnpm --filter @ticketbox/api migrate",
     "seed": "pnpm --filter @ticketbox/api seed",
     "dev:api": "pnpm --filter @ticketbox/api dev",
+    "dev:worker": "pnpm --filter @ticketbox/api dev:worker",
     "dev:web": "pnpm --filter @ticketbox/web dev",
     "test:unit": "pnpm -r --if-present run test:unit",
     "test:integration": "pnpm -r --if-present run test:integration",

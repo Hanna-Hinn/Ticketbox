@@ -91,6 +91,73 @@ describe("InMemoryHoldStore", () => {
   });
 });
 
+describe("InMemoryHoldStore as the sweeper sees it", () => {
+  it("lists an expired hold with its quantity and tier, hides it from find, and sweeps it once", async () => {
+    const { store, clock } = storeAt("2026-01-01T10:00:00.000Z");
+    store.seed(TIER, 10);
+    await store.reserve(
+      aHold().forTier(TIER).withToken("tok-1").withQty(3).createdAt(clock.now()).build(),
+    );
+    clock.advance(120_000);
+
+    const listed = await store.expired(clock.now());
+    const found = await store.find(holdToken("tok-1"));
+    const first = await store.sweep(
+      { token: holdToken("tok-1"), tierId: TIER, qty: 3 },
+      clock.now(),
+    );
+    const second = await store.sweep(
+      { token: holdToken("tok-1"), tierId: TIER, qty: 3 },
+      clock.now(),
+    );
+
+    expect(listed).toEqual([{ token: holdToken("tok-1"), tierId: TIER, qty: 3 }]);
+    expect(found).toBeNull();
+    expect(first).toEqual({ swept: true, restored: true, remaining: 10 });
+    expect(second).toEqual({ swept: false });
+  });
+
+  it("is as strict as Redis: a sweep naming the wrong quantity or tier finds nothing", async () => {
+    // The real store looks up the member the argument re-encodes to.
+    const { store, clock } = storeAt("2026-01-01T10:00:00.000Z");
+    store.seed(TIER, 10);
+    await store.reserve(
+      aHold().forTier(TIER).withToken("tok-1").withQty(3).createdAt(clock.now()).build(),
+    );
+    clock.advance(120_000);
+
+    const wrongQty = await store.sweep(
+      { token: holdToken("tok-1"), tierId: TIER, qty: 2 },
+      clock.now(),
+    );
+    const wrongTier = await store.sweep(
+      { token: holdToken("tok-1"), tierId: tierId("11111111-1111-4111-8111-bbbbbbbbbbbb"), qty: 3 },
+      clock.now(),
+    );
+
+    expect(wrongQty).toEqual({ swept: false });
+    expect(wrongTier).toEqual({ swept: false });
+    expect(await store.availability([TIER])).toEqual(new Map([[TIER, 7]]));
+  });
+
+  it("refuses to sweep a hold that is still alive", async () => {
+    const { store, clock } = storeAt("2026-01-01T10:00:00.000Z");
+    store.seed(TIER, 10);
+    await store.reserve(
+      aHold().forTier(TIER).withToken("tok-1").withQty(3).createdAt(clock.now()).build(),
+    );
+    clock.advance(119_999);
+
+    const result = await store.sweep(
+      { token: holdToken("tok-1"), tierId: TIER, qty: 3 },
+      clock.now(),
+    );
+
+    expect(result).toEqual({ swept: false });
+    expect(await store.expired(clock.now())).toEqual([]);
+  });
+});
+
 describe("FixedTokenGenerator", () => {
   it("hands out its tokens in order and refuses to invent more", () => {
     const tokens = new FixedTokenGenerator(["a", "b"]);

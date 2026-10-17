@@ -15,7 +15,8 @@
 --
 -- KEYS[1]  tier hash        ticketbox:v1:tier:<tierId>        { remaining }
 -- KEYS[2]  hold hash        ticketbox:v1:hold:<token>         { tierId, eventId, qty, createdAt, expiresAt }
--- KEYS[3]  tier holds zset  ticketbox:v1:tier:<tierId>:holds  token -> expiresAt ms (the sweeper's index, TB-026)
+-- KEYS[3]  tier holds zset  ticketbox:v1:tier:<tierId>:holds  "<token>:<qty>" -> expiresAt ms (the sweeper's
+--          index, TB-026: the member carries qty because the hash, and its qty, are gone by the time it is swept)
 -- ARGV[1]  qty
 -- ARGV[2]  token
 -- ARGV[3]  tierId
@@ -56,5 +57,5 @@ end
 local left = redis.call('HINCRBY', KEYS[1], 'remaining', -qty)
 redis.call('HSET', KEYS[2], 'tierId', ARGV[3], 'eventId', ARGV[7], 'qty', ARGV[1], 'createdAt', ARGV[4], 'expiresAt', ARGV[5])
 redis.call('PEXPIRE', KEYS[2], ARGV[6])
-redis.call('ZADD', KEYS[3], ARGV[5], ARGV[2])
+redis.call('ZADD', KEYS[3], ARGV[5], ARGV[2] .. ':' .. ARGV[1])
 return left
