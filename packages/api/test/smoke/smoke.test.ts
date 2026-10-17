@@ -6,7 +6,9 @@ import { SEED_EVENTS } from "../../src/infrastructure/postgres/seed.js";
 // todo carrying the task that makes it real, not a test pretending to pass.
 
 const baseUrl = process.env.SMOKE_BASE_URL ?? "http://localhost:3000";
-const seededEventId = SEED_EVENTS[0]?.id;
+const firstSeedEvent = SEED_EVENTS[0];
+if (firstSeedEvent === undefined) throw new Error("SEED_EVENTS is empty; smoke needs a seeded id");
+const seededEventId: string = firstSeedEvent.id;
 
 describe("smoke", () => {
   it("GET /health is 200 with postgres ok (redis joins the checks in TB-017)", async () => {
@@ -26,8 +28,6 @@ describe("smoke", () => {
   });
 
   it("GET /events/:id is 200 for a seeded id", async () => {
-    expect(seededEventId).toBeDefined();
-
     const response = await fetch(`${baseUrl}/events/${seededEventId}`);
 
     expect(response.status).toBe(200);

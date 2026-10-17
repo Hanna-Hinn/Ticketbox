@@ -17,7 +17,7 @@ Fill this in as you go — each section corresponds to a specific task in `02-pr
 
 ### Fixture
 
-Against the seed alone (9 tiers, 0 holds) both plans are a handful of pages and the numbers mean nothing. The dev database was filled first — 200 000 holds spread round-robin over the nine seeded tiers (30 % `converted`, 30 % `expired`, 20 % `released`, 20 % `active`), one order and one `order_items` row per converted hold. Not idempotent: run it once on a dev database you are willing to drop and `pnpm migrate && pnpm seed` again.
+Against the seed alone (9 tiers, 0 holds) both plans are a handful of pages and the numbers mean nothing. The dev database was filled first — 200 000 holds spread round-robin over the nine seeded tiers (30 % `converted`, 30 % `expired`, 20 % `released`, 20 % `active`), one order and one `order_items` row per converted hold. Not idempotent, and it sells the box office out: after the fill every jazz tier reports 0 remaining, so a UI pointed at this database shows nothing for sale. Run it once on a dev database you are willing to drop and `pnpm migrate && pnpm seed` again.
 
 ```sql
 INSERT INTO holds (token, tier_id, qty, status, expires_at)
@@ -141,23 +141,24 @@ CREATE INDEX order_items_tier_id_idx ON order_items (tier_id);
 
 - Planning time: 0.711 ms
 - Execution time: **23.1 ms**
-- % improvement: **55 %** (2.2× faster). Both sub-plans became `Bitmap Index Scan → Bitmap Heap Scan`; the index scans themselves cost 20–23 buffers each.
+- % improvement: **55 %** (2.2× faster). Both sub-plans became `Bitmap Index Scan → Bitmap Heap Scan`; the index scans themselves cost ~7 pages per tier (`Buffers` on a sub-plan node is summed over `loops=3`).
 
 ### Load test — `autocannon -c 50 -d 10 http://localhost:3000/events/11111111-1111-4111-8111-111111111111`
 
 A 3-second warm-up run preceded each measured run. Run from `packages/api` with `pnpm exec autocannon …`.
 
-|             | Unindexed | Indexed |
-| ----------- | --------- | ------- |
-| req/s (avg) | 76.4      | 310.6   |
-| p50 latency | 635 ms    | 159 ms  |
-| p99 latency | 802 ms    | 199 ms  |
-| requests    | 814       | 3 000   |
+|             | Unindexed | Indexed  |
+| ----------- | --------- | -------- |
+| req/s (avg) | 76.4      | 310.6    |
+| p50 latency | 635 ms    | 159 ms   |
+| p99 latency | 802 ms    | 199 ms   |
+| mean        | 632.5 ms  | 159.6 ms |
 
 **Notes:**
 
-- **The win is real, but half of it is CPU, not I/O.** Look at `Heap Blocks: exact=6671` on the indexed `holds` scan against `shared hit=6672` on the unindexed one: the index found the 4 445 matching rows instantly, then still had to visit **every page of the table** to fetch them, because the fixture scatters each tier's holds round-robin across the whole heap. What the index actually removed was the filter work — comparing 195 555 non-matching rows per tier, three times. With real data (holds for one tier arrive together in time, so they sit together on disk) the heap-block count would drop too and the gap would be wider. A `CLUSTER holds USING holds_tier_id_status_idx` would show it, but reordering a table to flatter a benchmark is not a change this project should ship.
-- **The HTTP-level win (4.1×) is bigger than the query-level win (2.2×) because of queueing.** 50 connections share a 10-connection pool; every query is CPU-bound inside Postgres on 4 vCPUs, so requests wait in line and the wait compounds. Little's law checks out both times: 50 in flight ÷ 76 req/s ≈ 650 ms ≈ the observed p50; 50 ÷ 311 ≈ 160 ms ≈ the indexed p50. Halve the service time and the queue drains more than twice as fast.
+- **The win is entirely CPU; the index saved no page accesses at all.** Total buffers _rose_ from 8 536 to 8 578 (the index pages are extra). `Heap Blocks: exact=6671` on the indexed `holds` scan against `shared hit=6672` on the unindexed one: the index found the 4 445 matching rows from ~7 index pages per tier, then still fetched **every page of the table** (2 224 pages × 3 tiers), because the fixture scatters each tier's holds round-robin across the whole heap. What disappeared was the filter work — comparing 195 555 non-matching rows per tier, three times. Nothing here was disk I/O either way: both runs were warm (`shared hit`, no `read`).
+- **The index that would remove the heap visits is a different one**, and it was deliberately not taken here. `CREATE INDEX … ON holds (tier_id) INCLUDE (qty) WHERE status = 'active'` indexes only the live set (tiny, churning every 120 s, while `holds` is an audit trail that grows for life — 80 % of this fixture is dead weight to the composite) and lets the sub-plan become an Index Only Scan. Against it: a partial index is used only when the planner can prove the query implies `status = 'active'` — a literal does, a parameter would not, and the fallback is a silent seq scan; and index-only scans depend on the visibility map, which on a table whose rows flip status every two minutes leaves the recently-touched pages visited anyway. The plain composite is the textbook control the Scope line names and answers any `(tier_id, status)` question. The partial index is the thing to measure when TB-022 writes the counter-rebuild query, not before. Neither helps the sweeper's `status = 'active' AND expires_at < now()`; that is TB-026/027's decision.
+- **The HTTP-level win (4.1×) is bigger than the query-level win (2.2×) because of queueing.** 50 connections share a 10-connection pool; every query is CPU-bound inside Postgres on 4 vCPUs, so requests wait in line and the wait compounds. Little's law checks out both times: 50 in flight ÷ 76.4 req/s ≈ 654 ms against the observed mean latency of 632.5 ms; 50 ÷ 310.6 ≈ 161 ms against the indexed mean of 159.6 ms. Halve the service time and the queue drains more than twice as fast.
 - **`GET /events/:id` is two round-trips**, not one: `findById` fetches the event row, then `tiersFor` runs the query above. The HTTP numbers include both and the JSON serialisation; the `EXPLAIN` numbers are only the second query.
 - **`GET /events` is not measured here.** Its availability query is the same shape over all upcoming events (TB-010 flagged its cost); the indexes help it the same way, but no number was taken.
 - **What this means for Redis.** Every later row in §2 (cache-aside) and §7 (live counter) compares against **the indexed row — 23 ms / 311 req/s / p50 159 ms** — never the unindexed one. Any "Redis made it faster" claim that beats 76 req/s but not 311 req/s was a win that belonged to this index.

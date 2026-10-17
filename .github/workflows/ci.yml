@@ -68,6 +68,7 @@ jobs:
             curl -sf http://localhost:3000/health && break
             sleep 1
           done
+          curl -sf http://localhost:3000/health || { echo "API did not become healthy within 30s"; cat api.log; exit 1; }
       - run: pnpm test:smoke
       - if: failure()
         run: |
