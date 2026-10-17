@@ -18,7 +18,10 @@ import { InMemoryHoldStore } from "../../fakes/InMemoryHoldStore.js";
 const noEvents = new InMemoryEventRepository([]);
 const unusedEvents = new EventController(
   new ListUpcomingEventsUseCase(noEvents, new FakeClock("2026-01-01T00:00:00.000Z")),
-  new GetEventAvailabilityUseCase(noEvents, new InMemoryHoldStore()),
+  new GetEventAvailabilityUseCase(
+    noEvents,
+    new InMemoryHoldStore(new FakeClock("2026-01-01T00:00:00.000Z")),
+  ),
 );
 const ok = (): Promise<void> => Promise.resolve();
 

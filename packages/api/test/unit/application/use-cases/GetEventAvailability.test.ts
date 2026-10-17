@@ -3,6 +3,7 @@ import { GetEventAvailabilityUseCase } from "../../../../src/application/use-cas
 import { eventId, tierId } from "../../../../src/domain/value-objects/Ids.js";
 import { aTier, anEvent, DEFAULT_EVENT_ID } from "../../../fakes/builders.js";
 import { InMemoryEventRepository } from "../../../fakes/InMemoryEventRepository.js";
+import { FakeClock } from "../../../fakes/FakeClock.js";
 import { InMemoryHoldStore } from "../../../fakes/InMemoryHoldStore.js";
 
 const GENERAL = tierId("general");
@@ -17,7 +18,7 @@ function world() {
       ])
       .build(),
   ]);
-  const holds = new InMemoryHoldStore();
+  const holds = new InMemoryHoldStore(new FakeClock("2026-01-01T00:00:00.000Z"));
   return { useCase: new GetEventAvailabilityUseCase(events, holds), holds };
 }
 
