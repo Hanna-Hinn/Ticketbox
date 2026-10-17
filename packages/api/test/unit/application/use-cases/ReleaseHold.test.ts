@@ -4,7 +4,9 @@ import { holdToken } from "../../../../src/domain/value-objects/HoldToken.js";
 import { tierId } from "../../../../src/domain/value-objects/Ids.js";
 import { aHold } from "../../../fakes/builders.js";
 import { FakeClock } from "../../../fakes/FakeClock.js";
+import { InMemoryHoldRepository } from "../../../fakes/InMemoryHoldRepository.js";
 import { InMemoryHoldStore } from "../../../fakes/InMemoryHoldStore.js";
+import { stubHoldRepository } from "../../../fakes/stubHoldRepository.js";
 import { stubHoldStore } from "../../../fakes/stubHoldStore.js";
 
 const TTL_MS = 120_000;
@@ -15,21 +17,23 @@ const TOKEN = holdToken("tok-1");
 async function world(): Promise<{
   useCase: ReleaseHoldUseCase;
   holds: InMemoryHoldStore;
+  mirror: InMemoryHoldRepository;
   clock: FakeClock;
 }> {
   const clock = new FakeClock("2026-01-01T10:00:00.000Z");
   const holds = new InMemoryHoldStore(clock);
   holds.seed(TIER, 10);
-  await holds.reserve(
-    aHold()
-      .forTier(TIER)
-      .withToken(TOKEN)
-      .withQty(4)
-      .createdAt(clock.now())
-      .withTtl(TTL_MS)
-      .build(),
-  );
-  return { useCase: new ReleaseHoldUseCase(holds), holds, clock };
+  const hold = aHold()
+    .forTier(TIER)
+    .withToken(TOKEN)
+    .withQty(4)
+    .createdAt(clock.now())
+    .withTtl(TTL_MS)
+    .build();
+  await holds.reserve(hold);
+  const mirror = new InMemoryHoldRepository();
+  await mirror.save(hold);
+  return { useCase: new ReleaseHoldUseCase(holds, mirror), holds, mirror, clock };
 }
 
 describe("ReleaseHoldUseCase", () => {
@@ -91,8 +95,59 @@ describe("ReleaseHoldUseCase", () => {
       release: async () => ({ released: true, tierId: TIER, remaining: 10 }),
     });
 
-    const result = await new ReleaseHoldUseCase(store).execute({ token: TOKEN });
+    const result = await new ReleaseHoldUseCase(store, new InMemoryHoldRepository()).execute({
+      token: TOKEN,
+    });
 
     expect(result).toEqual({ released: true, tierId: TIER, remaining: 10 });
+  });
+
+  it("marks the row released once the store has released, and not before", async () => {
+    const { useCase, mirror } = await world();
+
+    await useCase.execute({ token: TOKEN });
+
+    expect(mirror.statusOf(TOKEN)).toBe("released");
+  });
+
+  it("reports a row that could not be marked, with the tickets already back", async () => {
+    // The truth moved before the record failed: the caller gets the error,
+    // and a retry answers released: false (ADR 0004).
+    const clock = new FakeClock("2026-01-01T10:00:00.000Z");
+    const holds = new InMemoryHoldStore(clock);
+    holds.seed(TIER, 10);
+    await holds.reserve(
+      aHold().forTier(TIER).withToken(TOKEN).withQty(4).createdAt(clock.now()).build(),
+    );
+    const brokenMirror = stubHoldRepository({
+      setStatus: () => Promise.reject(new Error("postgres is down")),
+    });
+
+    await expect(
+      new ReleaseHoldUseCase(holds, brokenMirror).execute({ token: TOKEN }),
+    ).rejects.toThrow("postgres is down");
+
+    expect(await holds.availability([TIER])).toEqual(new Map([[TIER, 10]]));
+  });
+
+  it("never touches the row when the store had nothing to release, even an unreachable one", async () => {
+    const store = stubHoldStore({ release: async () => ({ released: false }) });
+    const unreachableMirror = stubHoldRepository();
+
+    const result = await new ReleaseHoldUseCase(store, unreachableMirror).execute({
+      token: TOKEN,
+    });
+
+    expect(result).toEqual({ released: false });
+  });
+
+  it("leaves the row alone when there was nothing to release", async () => {
+    const { useCase, mirror, clock } = await world();
+
+    clock.advance(TTL_MS);
+    await useCase.execute({ token: TOKEN });
+    await useCase.execute({ token: holdToken("tok-nobody") });
+
+    expect(mirror.statusOf(TOKEN)).toBe("active");
   });
 });

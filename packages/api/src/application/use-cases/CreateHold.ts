@@ -4,6 +4,7 @@ import type { EventId, TierId } from "../../domain/value-objects/Ids.js";
 import { Quantity } from "../../domain/value-objects/Quantity.js";
 import type { Clock } from "../ports/Clock.js";
 import type { EventRepository } from "../ports/EventRepository.js";
+import type { HoldRepository } from "../ports/HoldRepository.js";
 import type { HoldStore } from "../ports/HoldStore.js";
 import type { TokenGenerator } from "../ports/TokenGenerator.js";
 
@@ -23,6 +24,7 @@ export class CreateHoldUseCase {
   constructor(
     private readonly events: EventRepository,
     private readonly holds: HoldStore,
+    private readonly mirror: HoldRepository,
     private readonly clock: Clock,
     private readonly tokens: TokenGenerator,
     private readonly holdTtlMs: number,
@@ -51,6 +53,20 @@ export class CreateHoldUseCase {
     // is how a stale one ends up winning.
     const reserved = await this.holds.reserve(hold);
     if (!reserved.ok) return { ok: false, reason: "insufficient" };
+
+    // The row follows the decision, never leads it (ADR 0004): a row written
+    // first would record holds the store then refuses. If the row cannot be
+    // written, give the tickets back now, on the store that answered a
+    // moment ago: left alone, every retry while Postgres is down would lock
+    // another qty for the whole TTL. If the release fails too, nothing is
+    // worse than before — the hold expires — and the caller hears about the
+    // first failure, not the second.
+    try {
+      await this.mirror.save(hold);
+    } catch (err: unknown) {
+      await this.holds.release(hold.token).catch(() => undefined);
+      throw err;
+    }
 
     return { ok: true, token, expiresAt: hold.expiresAt, remaining: reserved.remaining };
   }

@@ -17,6 +17,7 @@ import { HoldController } from "../../../src/presentation/http/controllers/HoldC
 import { InMemoryCacheStats } from "../../fakes/InMemoryCacheStats.js";
 import { buildServer } from "../../../src/presentation/http/server.js";
 import { FakeClock } from "../../fakes/FakeClock.js";
+import { InMemoryHoldRepository } from "../../fakes/InMemoryHoldRepository.js";
 import { InMemoryHoldStore } from "../../fakes/InMemoryHoldStore.js";
 import { connectToTestDatabase, resetSchema } from "../support/database.js";
 
@@ -46,7 +47,7 @@ beforeAll(async () => {
   getAvailability = new GetEventAvailabilityUseCase(repo, holds);
   app = buildServer({
     stats: unusedStats,
-    holds: new HoldController(new ReleaseHoldUseCase(holds)),
+    holds: new HoldController(new ReleaseHoldUseCase(holds, new InMemoryHoldRepository())),
     logger: pino({ level: "silent" }),
     events: new EventController(new ListUpcomingEventsUseCase(repo, clock), getAvailability),
     checks: {},

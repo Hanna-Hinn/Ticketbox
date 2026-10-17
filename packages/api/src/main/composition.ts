@@ -5,6 +5,7 @@ import { GetEventAvailabilityUseCase } from "../application/use-cases/GetEventAv
 import { ListUpcomingEventsUseCase } from "../application/use-cases/ListUpcomingEvents.js";
 import { ReleaseHoldUseCase } from "../application/use-cases/ReleaseHold.js";
 import { PgEventRepository } from "../infrastructure/postgres/PgEventRepository.js";
+import { PgHoldRepository } from "../infrastructure/postgres/PgHoldRepository.js";
 import { createPool } from "../infrastructure/postgres/pool.js";
 import { CachedEventRepository } from "../infrastructure/redis/CachedEventRepository.js";
 import { RedisCacheStats } from "../infrastructure/redis/RedisCacheStats.js";
@@ -48,13 +49,15 @@ export function compose(config: Config): System {
   // HoldStore: the live counters and holds, create_hold.lua behind reserve
   // (TB-022). Nothing seeds the counters yet (TB-027).
   const holds = new RedisHoldStore(redis, log.child({ component: "hold-store" }));
+  // HoldRepository: the audit row, written after the store decides (TB-024).
+  const holdMirror = new PgHoldRepository(pool);
   const clock = new SystemClock(); // Clock
 
   // Use cases
   const listUpcoming = new ListUpcomingEventsUseCase(events, clock);
   const getAvailability = new GetEventAvailabilityUseCase(events, holds);
   const getCacheStats = new GetCacheStatsUseCase(cacheStats); // CacheStatsReader
-  const releaseHold = new ReleaseHoldUseCase(holds);
+  const releaseHold = new ReleaseHoldUseCase(holds, holdMirror);
 
   // HTTP
   const controller = new EventController(listUpcoming, getAvailability);
