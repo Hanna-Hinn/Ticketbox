@@ -1,0 +1,19 @@
+import type { HoldToken } from "../../domain/value-objects/HoldToken.js";
+import type { TierId } from "../../domain/value-objects/Ids.js";
+
+// Every Redis key in the system is built here, from a branded id, so a tier
+// key can never be built from an event id and a string-literal key anywhere
+// else is a review rejection (CLAUDE.md rule 9). Only the keys a merged task
+// writes are defined; each later task adds its own. Single node, no
+// cluster (handbook): no hash tags.
+
+const KEY_PREFIX = "ticketbox:v1:";
+
+export const keys = {
+  // hash: { remaining } — the live counter (TB-022)
+  tier: (id: TierId): string => `${KEY_PREFIX}tier:${id}`,
+  // zset: token → expiresAt (epoch ms) — the sweeper's index (TB-022, TB-026)
+  tierHolds: (id: TierId): string => `${KEY_PREFIX}tier:${id}:holds`,
+  // hash: the live hold, with the TTL (TB-022)
+  hold: (token: HoldToken): string => `${KEY_PREFIX}hold:${token}`,
+} as const;

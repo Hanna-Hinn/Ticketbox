@@ -4,6 +4,7 @@ import { GetEventAvailabilityUseCase } from "../application/use-cases/GetEventAv
 import { ListUpcomingEventsUseCase } from "../application/use-cases/ListUpcomingEvents.js";
 import { PgEventRepository } from "../infrastructure/postgres/PgEventRepository.js";
 import { createPool } from "../infrastructure/postgres/pool.js";
+import { closeRedisClient, createRedisClient } from "../infrastructure/redis/client.js";
 import { SystemClock } from "../infrastructure/system/SystemClock.js";
 import { UnconfiguredHoldStore } from "../infrastructure/system/UnconfiguredHoldStore.js";
 import { EventController } from "../presentation/http/controllers/EventController.js";
@@ -25,6 +26,8 @@ export function compose(config: Config): System {
   // An idle client losing its connection makes the pool emit "error";
   // unhandled, that would terminate the process (TB-010).
   pool.on("error", (err) => log.error({ err }, "idle postgres client errored"));
+  // Connects now and reconnects forever; nothing reads it yet (TB-017).
+  const redis = createRedisClient(config.REDIS_URL, log.child({ component: "redis" }));
 
   // Ports → adapters
   const events = new PgEventRepository(pool); // EventRepository
@@ -41,7 +44,9 @@ export function compose(config: Config): System {
     postgres: async (): Promise<void> => {
       await pool.query("SELECT 1");
     },
-    // redis: TB-017
+    redis: async (): Promise<void> => {
+      await redis.ping();
+    },
   };
   const app = buildServer({ logger: log, events: controller, checks });
 
@@ -53,7 +58,7 @@ export function compose(config: Config): System {
     close: () => {
       closing ??= (async () => {
         await app.close();
-        await pool.end();
+        await Promise.all([pool.end(), closeRedisClient(redis)]);
       })();
       return closing;
     },
