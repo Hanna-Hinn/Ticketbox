@@ -7,6 +7,7 @@ import { runMigrations } from "../../../src/infrastructure/postgres/migrations.j
 import { seed, SEED_EVENTS } from "../../../src/infrastructure/postgres/seed.js";
 import { seedLiveCounters } from "../../../src/infrastructure/redis/seedLiveCounters.js";
 import { keys } from "../../../src/infrastructure/redis/keys.js";
+import { holdToken } from "../../../src/domain/value-objects/HoldToken.js";
 import { eventId, tierId } from "../../../src/domain/value-objects/Ids.js";
 import { connectToTestDatabase, resetSchema, testDatabaseUrl } from "../support/database.js";
 import { connectToTestRedis, testRedisUrl } from "../support/redis.js";
@@ -166,6 +167,24 @@ describe("compose", () => {
     expect(released.json()).toEqual({ released: true });
     expect(rowAfter.rows[0]?.status).toBe("released");
     expect(remainingOf(pageAfter)).toBe(1000);
+  });
+
+  it("answers 500, not 404, for a live hold key the current script did not write", async () => {
+    // The hash shape changed in TB-025 (eventId). A pre-upgrade key is a bug
+    // to surface, not an expired hold to report.
+    const token = "11111111-1111-4111-8111-aaaaaaaaaaa1";
+    const createdAt = Date.now();
+    await redis.hset(keys.hold(holdToken(token)), {
+      tierId: "11111111-1111-4111-8111-aaaaaaaaaaaa",
+      qty: 1,
+      createdAt,
+      expiresAt: createdAt + 120_000,
+    });
+
+    const response = await system.app.inject({ url: `/holds/${token}` });
+
+    expect(response.statusCode).toBe(500);
+    expect(response.json()).toMatchObject({ error: { code: "INTERNAL" } });
   });
 
   it("refuses with 409 INSUFFICIENT when the live counter says no", async () => {

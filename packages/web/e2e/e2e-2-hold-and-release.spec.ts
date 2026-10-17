@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, test, type Page } from "@playwright/test";
 
 // Handbook §4.1 E2E-2, the part that exists before orders: get tickets, land
 // on checkout, see a timer counting down, release, and see the number come
@@ -22,7 +22,7 @@ test.afterEach(async ({ request }) => {
   if (token !== undefined) await request.delete(`/api/holds/${token}`);
 });
 
-async function landOnCheckout(page: import("@playwright/test").Page): Promise<void> {
+async function landOnCheckout(page: Page): Promise<void> {
   await expect(page).toHaveURL(CHECKOUT);
   token = CHECKOUT.exec(page.url())?.[1];
 }

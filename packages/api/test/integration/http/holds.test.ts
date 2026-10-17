@@ -5,6 +5,7 @@ import { CreateHoldUseCase } from "../../../src/application/use-cases/CreateHold
 import { GetHoldUseCase } from "../../../src/application/use-cases/GetHold.js";
 import { ReleaseHoldUseCase } from "../../../src/application/use-cases/ReleaseHold.js";
 import { tierId } from "../../../src/domain/value-objects/Ids.js";
+import type { ErrorDto } from "../../../src/presentation/dto/errors.js";
 import { HoldController } from "../../../src/presentation/http/controllers/HoldController.js";
 import { buildServer } from "../../../src/presentation/http/server.js";
 import { aTier, anEvent, DEFAULT_EVENT_ID } from "../../fakes/builders.js";
@@ -97,10 +98,10 @@ describe("POST /holds", () => {
     });
 
     expect(noEvent.statusCode).toBe(404);
-    expect(noEvent.json().error.message).toMatch(/^event /);
+    expect(noEvent.json<ErrorDto>().error.message).toMatch(/^event /);
     expect(noTier.statusCode).toBe(404);
     expect(noTier.json()).toMatchObject({ error: { code: "NOT_FOUND" } });
-    expect(noTier.json().error.message).toMatch(/^tier /);
+    expect(noTier.json<ErrorDto>().error.message).toMatch(/^tier /);
   });
 
   it("answers 409 INSUFFICIENT when the store refuses, with the inventory untouched", async () => {

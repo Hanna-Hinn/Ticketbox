@@ -245,6 +245,21 @@ describe("RedisHoldStore.find", () => {
 
     await expect(store.find(holdToken("tok-odd"))).rejects.toThrow(/createdAt/);
   });
+
+  it("treats a hold hash from before the eventId field as a bug, not as a missing hold", async () => {
+    // TB-022's script wrote four fields. A key with those four is a store
+    // that was never flushed across the upgrade — a 500 that says so, never
+    // a 404 that quietly tells the holder their tickets are gone.
+    const createdAt = new Date(CREATED).getTime();
+    await redis.hset(keys.hold(holdToken("tok-old")), {
+      tierId: TIER,
+      qty: 2,
+      createdAt,
+      expiresAt: createdAt + TTL_MS,
+    });
+
+    await expect(store.find(holdToken("tok-old"))).rejects.toThrow(/eventId/);
+  });
 });
 
 describe("RedisHoldStore.availability", () => {

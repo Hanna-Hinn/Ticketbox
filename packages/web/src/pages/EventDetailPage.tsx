@@ -39,7 +39,6 @@ function HoldForm({ eventId, tier }: { eventId: string; tier: TierDto }): ReactN
         type="number"
         min="1"
         step="1"
-        required
         value={qty}
         onChange={(event) => setQty(Number(event.target.value))}
         aria-label={`Tickets for ${tier.name}`}
