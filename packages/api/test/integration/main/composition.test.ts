@@ -30,11 +30,11 @@ afterAll(async () => {
 });
 
 describe("compose", () => {
-  it("wires a system whose health check reaches Postgres", async () => {
+  it("wires a system whose health check reaches Postgres and Redis", async () => {
     const response = await system.app.inject({ url: "/health" });
 
     expect(response.statusCode).toBe(200);
-    expect(response.json()).toEqual({ status: "ok", checks: { postgres: "ok" } });
+    expect(response.json()).toEqual({ status: "ok", checks: { postgres: "ok", redis: "ok" } });
   });
 
   it("serves the seeded events through the real repository and the computed count", async () => {

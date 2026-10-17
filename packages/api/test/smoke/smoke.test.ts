@@ -12,11 +12,14 @@ if (firstSeedEvent === undefined) throw new Error("SEED_EVENTS is empty; smoke n
 const seededEventId: string = firstSeedEvent.id;
 
 describe("smoke", () => {
-  it("GET /health is 200 with postgres ok (redis joins the checks in TB-017)", async () => {
+  it("GET /health is 200 with both engines ok", async () => {
     const response = await fetch(`${baseUrl}/health`);
 
     expect(response.status).toBe(200);
-    expect(await response.json()).toMatchObject({ status: "ok", checks: { postgres: "ok" } });
+    expect(await response.json()).toEqual({
+      status: "ok",
+      checks: { postgres: "ok", redis: "ok" },
+    });
   });
 
   it("GET /events returns a non-empty array (seed data loaded)", async () => {
