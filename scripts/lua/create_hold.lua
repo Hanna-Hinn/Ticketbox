@@ -9,8 +9,9 @@
 -- 200 holds written, 195 of them oversold (docs/NOTES.md § TB-021). Redis runs a
 -- script to completion before it reads the next command from any client,
 -- so in here the read, the comparison and the decrement are one step: the
--- sixth caller reads 0, not 10. Seven commands, no loop: the blocking is
--- the guarantee, and it is over in well under a millisecond.
+-- sixth caller reads 0, not 10. Seven commands on the fresh path (EXISTS
+-- and six more), two on a replay, no loop: the blocking is the guarantee,
+-- and it is over in well under a millisecond.
 --
 -- KEYS[1]  tier hash        ticketbox:v1:tier:<tierId>        { remaining }
 -- KEYS[2]  hold hash        ticketbox:v1:hold:<token>         { tierId, qty, createdAt, expiresAt }
@@ -34,7 +35,14 @@
 -- retry with a NEW token is a different problem: idempotent POST /holds is
 -- TB-030's lesson.)
 if redis.call('EXISTS', KEYS[2]) == 1 then
-  return tonumber(redis.call('HGET', KEYS[1], 'remaining'))
+  -- The receipt exists but the counter is gone or not a number (evicted,
+  -- or corrupted since): the same refusal a first run would get, so the
+  -- adapter warns once instead of answering a nil.
+  local current = tonumber(redis.call('HGET', KEYS[1], 'remaining'))
+  if not current then
+    return -2
+  end
+  return current
 end
 local remaining = redis.call('HGET', KEYS[1], 'remaining')
 if not remaining then
