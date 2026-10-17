@@ -3,8 +3,8 @@ import type { FastifyReply, FastifyRequest } from "fastify";
 import type { IdempotencyStore } from "../../application/ports/IdempotencyStore.js";
 import { envelope } from "./errors.js";
 
-export const IDEMPOTENCY_HEADER = "idempotency-key";
-export const REPLAYED_HEADER = "idempotency-replayed";
+const IDEMPOTENCY_HEADER = "idempotency-key";
+const REPLAYED_HEADER = "idempotency-replayed";
 
 // Two route-scoped hooks around one handler (TB-030). Before: claim the key
 // for this body, or answer from what became of it. After: store what the
@@ -29,7 +29,10 @@ export function idempotencyHooks(store: IdempotencyStore): IdempotencyHooks {
     async preHandler(request, reply) {
       // The schema already required and bounded the header, and accepted
       // the body: the fingerprint is of what the handler will see.
-      const key = headerValue(request.headers[IDEMPOTENCY_HEADER]);
+      const key = request.headers[IDEMPOTENCY_HEADER];
+      if (typeof key !== "string") {
+        throw new Error("idempotency hooks ran without the header the schema requires");
+      }
       const fingerprint = fingerprintOf(request.body);
       const begun = await store.begin(key, fingerprint);
       switch (begun.outcome) {
@@ -76,17 +79,8 @@ export function idempotencyHooks(store: IdempotencyStore): IdempotencyHooks {
   };
 }
 
-function headerValue(value: string | string[] | undefined): string {
-  if (typeof value === "string") return value;
-  // The schema rejects an absent header; a repeated one is its first value.
-  const first = value?.[0];
-  if (first === undefined)
-    throw new Error("idempotency hooks ran without the header the schema requires");
-  return first;
-}
-
 // Sorted keys, so two JSON spellings of one request fingerprint the same.
-export function fingerprintOf(body: unknown): string {
+function fingerprintOf(body: unknown): string {
   return createHash("sha256").update(canonical(body)).digest("hex");
 }
 

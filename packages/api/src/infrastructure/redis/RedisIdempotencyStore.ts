@@ -6,16 +6,13 @@ import type {
   StoredResponse,
 } from "../../application/ports/IdempotencyStore.js";
 import { keys } from "./keys.js";
-import { within } from "./within.js";
+import { within, WRITE_COMMAND_DEADLINE_MS } from "./within.js";
 
 // A day, as the delivery plan says: the same request, for the same day,
 // gets the same answer. The claim lives as long as the answer would —
 // a request that claims and then dies (the process, not the handler) holds
 // its key for a day; the client's way out is a new key (ADR 0008).
 const TTL_SECONDS = 86_400;
-// The write path's deadline (RedisHoldStore's), for the same reason: a
-// claim that cannot be made in time fails the request, never queues it.
-const COMMAND_DEADLINE_MS = 1_000;
 
 type Stored =
   | { state: "in-progress"; fingerprint: string }
@@ -35,7 +32,7 @@ export class RedisIdempotencyStore implements IdempotencyStore {
     const claim: Stored = { state: "in-progress", fingerprint };
     const won = await within(
       this.redis.set(keys.idempotency(key), JSON.stringify(claim), "EX", TTL_SECONDS, "NX"),
-      COMMAND_DEADLINE_MS,
+      WRITE_COMMAND_DEADLINE_MS,
       "idempotency claim",
     );
     if (won === "OK") return { outcome: "won" };
@@ -44,10 +41,10 @@ export class RedisIdempotencyStore implements IdempotencyStore {
     // retries and wins next time; a rare, harmless answer.
     const raw = await within(
       this.redis.get(keys.idempotency(key)),
-      COMMAND_DEADLINE_MS,
+      WRITE_COMMAND_DEADLINE_MS,
       "idempotency lookup",
     );
-    const stored = parse(raw);
+    const stored = this.parse(key, raw);
     if (stored === null) return { outcome: "in-progress" };
     if (stored.fingerprint !== fingerprint) return { outcome: "mismatch" };
     if (stored.state === "in-progress") return { outcome: "in-progress" };
@@ -58,13 +55,17 @@ export class RedisIdempotencyStore implements IdempotencyStore {
     const done: Stored = { state: "done", fingerprint, ...response };
     await within(
       this.redis.set(keys.idempotency(key), JSON.stringify(done), "EX", TTL_SECONDS),
-      COMMAND_DEADLINE_MS,
+      WRITE_COMMAND_DEADLINE_MS,
       "idempotency store",
     );
   }
 
   async abandon(key: string): Promise<void> {
-    await within(this.redis.del(keys.idempotency(key)), COMMAND_DEADLINE_MS, "idempotency abandon");
+    await within(
+      this.redis.del(keys.idempotency(key)),
+      WRITE_COMMAND_DEADLINE_MS,
+      "idempotency abandon",
+    );
   }
 
   // Orders fail closed: a store that cannot be reached is an error, never a
@@ -74,14 +75,31 @@ export class RedisIdempotencyStore implements IdempotencyStore {
       throw new Error(`redis is ${this.redis.status}; cannot ${operation}`);
     }
   }
+
+  // Only this adapter writes the value, so one it cannot read — bad JSON or
+  // an unknown shape — is a bug, logged once (the key, never the value: it
+  // holds a body with an email), and treated as "someone is working on it"
+  // rather than running the use case a second time.
+  private parse(key: string, raw: string | null): Stored | null {
+    if (raw === null) return null;
+    let value: unknown;
+    try {
+      value = JSON.parse(raw);
+    } catch {
+      value = undefined;
+    }
+    const stored = asStored(value);
+    if (stored === null) {
+      this.log.warn(
+        { key: keys.idempotency(key) },
+        "idempotency value has an unknown shape; treating it as in progress",
+      );
+    }
+    return stored;
+  }
 }
 
-// Only this adapter writes the value, so a shape it does not recognise is a
-// bug worth a warn — and worth treating as "someone is working on it"
-// rather than running the use case a second time.
-function parse(raw: string | null): Stored | null {
-  if (raw === null) return null;
-  const value: unknown = JSON.parse(raw);
+function asStored(value: unknown): Stored | null {
   if (
     typeof value !== "object" ||
     value === null ||

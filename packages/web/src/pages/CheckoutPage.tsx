@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from "react";
+import { useRef, useState, type ReactNode } from "react";
 import type { HoldDto } from "@ticketbox/api/src/presentation/dto/holds.js";
 import type { OrderDto } from "@ticketbox/api/src/presentation/dto/orders.js";
 import { api, ApiError } from "../api/client.js";
@@ -38,6 +38,10 @@ export function CheckoutPage({ token }: { token: string }): ReactNode {
   const [confirming, setConfirming] = useState(false);
   const [confirmError, setConfirmError] = useState<string | undefined>(undefined);
   const [order, setOrder] = useState<OrderDto | undefined>(undefined);
+  // A double-click sends two requests under the one key; the server answers
+  // the second 409 before the first has finished. Not an error to show:
+  // while a sibling is still out, its answer is the page's.
+  const inFlight = useRef(0);
 
   // The order outlives the hold it consumed: once confirmed, the hold is
   // gone from the server, and this page shows the order, not the gap.
@@ -85,6 +89,7 @@ export function CheckoutPage({ token }: { token: string }): ReactNode {
   };
 
   const confirm = async (): Promise<void> => {
+    inFlight.current += 1;
     setConfirming(true);
     setConfirmError(undefined);
     try {
@@ -95,8 +100,11 @@ export function CheckoutPage({ token }: { token: string }): ReactNode {
         retry();
         return;
       }
+      if (inFlight.current > 1) return;
       setConfirmError(err instanceof ApiError ? `${err.status} ${err.message}` : String(err));
       setConfirming(false);
+    } finally {
+      inFlight.current -= 1;
     }
   };
 
