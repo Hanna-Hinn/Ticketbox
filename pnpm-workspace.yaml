@@ -1,2 +1,7 @@
 packages:
   - "packages/*"
+
+# tsx depends on esbuild, whose install script pnpm 11 refuses to run unless
+# allowed here. Without this every pnpm script fails with ERR_PNPM_IGNORED_BUILDS.
+allowBuilds:
+  esbuild: true
