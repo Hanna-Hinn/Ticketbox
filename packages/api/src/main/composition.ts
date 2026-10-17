@@ -3,6 +3,7 @@ import pino from "pino";
 import { GetCacheStatsUseCase } from "../application/use-cases/GetCacheStats.js";
 import { GetEventAvailabilityUseCase } from "../application/use-cases/GetEventAvailability.js";
 import { ListUpcomingEventsUseCase } from "../application/use-cases/ListUpcomingEvents.js";
+import { ReleaseHoldUseCase } from "../application/use-cases/ReleaseHold.js";
 import { PgEventRepository } from "../infrastructure/postgres/PgEventRepository.js";
 import { createPool } from "../infrastructure/postgres/pool.js";
 import { CachedEventRepository } from "../infrastructure/redis/CachedEventRepository.js";
@@ -11,6 +12,7 @@ import { RedisHoldStore } from "../infrastructure/redis/RedisHoldStore.js";
 import { closeRedisClient, createRedisClient } from "../infrastructure/redis/client.js";
 import { SystemClock } from "../infrastructure/system/SystemClock.js";
 import { EventController } from "../presentation/http/controllers/EventController.js";
+import { HoldController } from "../presentation/http/controllers/HoldController.js";
 import { StatsController } from "../presentation/http/controllers/StatsController.js";
 import { buildServer } from "../presentation/http/server.js";
 import type { Config } from "./config.js";
@@ -52,9 +54,11 @@ export function compose(config: Config): System {
   const listUpcoming = new ListUpcomingEventsUseCase(events, clock);
   const getAvailability = new GetEventAvailabilityUseCase(events, holds);
   const getCacheStats = new GetCacheStatsUseCase(cacheStats); // CacheStatsReader
+  const releaseHold = new ReleaseHoldUseCase(holds);
 
   // HTTP
   const controller = new EventController(listUpcoming, getAvailability);
+  const holdController = new HoldController(releaseHold);
   const stats = new StatsController(getCacheStats);
   const checks = {
     postgres: async (): Promise<void> => {
@@ -64,7 +68,13 @@ export function compose(config: Config): System {
       await redis.ping();
     },
   };
-  const app = buildServer({ logger: log, events: controller, stats, checks });
+  const app = buildServer({
+    logger: log,
+    events: controller,
+    holds: holdController,
+    stats,
+    checks,
+  });
 
   // Memoised: pool.end() throws if called twice, and a supervisor's
   // SIGINT-then-SIGTERM is two calls.

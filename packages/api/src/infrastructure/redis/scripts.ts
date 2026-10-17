@@ -6,6 +6,7 @@ import type { ClientContext, Redis, Result } from "ioredis";
 const LUA_DIR = new URL("../../../../../scripts/lua/", import.meta.url);
 
 export const CREATE_HOLD_LUA = readFileSync(new URL("create_hold.lua", LUA_DIR), "utf8");
+export const RELEASE_HOLD_LUA = readFileSync(new URL("release_hold.lua", LUA_DIR), "utf8");
 
 // ioredis adds a defined command to the client at runtime only. Its
 // RedisCommander interface is left open for exactly this augmentation; the
@@ -26,6 +27,12 @@ declare module "ioredis" {
       expiresAtMs: number,
       ttlMs: number,
     ): Result<number, Context>;
+    releaseHold(
+      holdKey: string,
+      tierKey: string,
+      tierHoldsKey: string,
+      token: string,
+    ): Result<number, Context>;
   }
 }
 
@@ -34,4 +41,5 @@ declare module "ioredis" {
 // in node_modules/ioredis/built/Script.js.
 export function defineHoldScripts(redis: Redis): void {
   redis.defineCommand("createHold", { numberOfKeys: 3, lua: CREATE_HOLD_LUA });
+  redis.defineCommand("releaseHold", { numberOfKeys: 3, lua: RELEASE_HOLD_LUA });
 }

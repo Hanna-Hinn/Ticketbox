@@ -172,7 +172,7 @@ Read `event_handler.js` before writing the "runs twice" answer. The plan reasone
 ## 8. Follow-ups left behind
 
 - [ ] **Who seeds the live counters** (`tier:<id> remaining`)? Until something writes them, every reserve is refused. TB-023 (route), TB-025 (clicks) and TB-027 (reconcile) — one of them has to answer, deliberately.
-- [ ] TB-023: `release_hold.lua`, compare-and-restore; `RedisHoldStore.release` throws until then. The replay guard means a release followed by a replayed reserve of the same token would pay again — the replay window is the reconnect, release is later; worth one sentence in TB-023's plan.
+- [x] TB-023: `release_hold.lua`, compare-and-restore; `RedisHoldStore.release` throws until then. The replay guard means a release followed by a replayed reserve of the same token would pay again — the replay window is the reconnect, release is later; worth one sentence in TB-023's plan.
 - [ ] TB-026: the sweeper must handle both orders of "hold key gone" and "index score passed" (clock skew), and an index entry whose key was evicted.
 - [ ] TB-040: `keys.holdPattern()` for KEYS/SCAN inspection; the warn-per-request on an unseeded tier.
 - [ ] The handbook's `test/concurrency/` directory has no runner; the concurrency test lives under `test/integration/` so CI runs it. A `test:concurrency` script when there is a second such file.

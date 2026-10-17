@@ -12,6 +12,8 @@ import { seed } from "../../../src/infrastructure/postgres/seed.js";
 import { EventController } from "../../../src/presentation/http/controllers/EventController.js";
 import { GetCacheStatsUseCase } from "../../../src/application/use-cases/GetCacheStats.js";
 import { StatsController } from "../../../src/presentation/http/controllers/StatsController.js";
+import { ReleaseHoldUseCase } from "../../../src/application/use-cases/ReleaseHold.js";
+import { HoldController } from "../../../src/presentation/http/controllers/HoldController.js";
 import { InMemoryCacheStats } from "../../fakes/InMemoryCacheStats.js";
 import { buildServer } from "../../../src/presentation/http/server.js";
 import { FakeClock } from "../../fakes/FakeClock.js";
@@ -44,6 +46,7 @@ beforeAll(async () => {
   getAvailability = new GetEventAvailabilityUseCase(repo, holds);
   app = buildServer({
     stats: unusedStats,
+    holds: new HoldController(new ReleaseHoldUseCase(holds)),
     logger: pino({ level: "silent" }),
     events: new EventController(new ListUpcomingEventsUseCase(repo, clock), getAvailability),
     checks: {},

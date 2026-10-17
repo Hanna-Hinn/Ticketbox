@@ -10,8 +10,11 @@ import { keys } from "./keys.js";
 import { defineHoldScripts } from "./scripts.js";
 import { CACHE_COMMAND_DEADLINE_MS, within } from "./within.js";
 
-// create_hold.lua's reply contract.
+// The scripts' reply contracts: create_hold.lua answers INSUFFICIENT or
+// NO_COUNTER, release_hold.lua answers NOTHING_TO_RELEASE or NO_COUNTER;
+// anything >= 0 is the tier's new remaining.
 const INSUFFICIENT = -1;
+const NOTHING_TO_RELEASE = -1;
 const NO_COUNTER = -2;
 
 // A socket that is "ready" and not answering (half-open TCP, a BUSY server)
@@ -69,12 +72,38 @@ export class RedisHoldStore implements HoldStore {
     return { ok: true, remaining: left };
   }
 
-  async release(): Promise<
-    { released: true; tierId: TierId; remaining: number } | { released: false }
-  > {
-    // The only correct release is a compare-and-restore script, which is
-    // TB-023's whole lesson; a DEL here would release someone else's hold.
-    throw new Error("HoldStore.release is not implemented until TB-023 (release_hold.lua)");
+  async release(
+    token: HoldToken,
+  ): Promise<{ released: true; tierId: TierId; remaining: number } | { released: false }> {
+    this.requireReady("release");
+    // The tier's keys are named after an id that lives inside the hold, so
+    // one read comes first. The read and the script are not atomic, and
+    // need not be: the script's own EXISTS is the compare, and a hold that
+    // expires in between is answered "nothing to release".
+    const tier = await within(
+      this.redis.hget(keys.hold(token), "tierId"),
+      HOLD_COMMAND_DEADLINE_MS,
+      "release",
+    );
+    if (tier === null) return { released: false };
+    const owner = tierId(tier);
+    const left = await within(
+      this.redis.releaseHold(keys.hold(token), keys.tier(owner), keys.tierHolds(owner), token),
+      HOLD_COMMAND_DEADLINE_MS,
+      "release",
+    );
+    if (left === NO_COUNTER) {
+      // Restoring into a missing counter would create one of size qty and
+      // hide the tier from the computed-count fallback (ADR 0002). The hold
+      // stays until its TTL; reconciliation (TB-027) brings the counter back.
+      this.log.warn(
+        { tierId: owner, key: keys.tier(owner) },
+        "no live counter for tier; hold not released until it is reconciled",
+      );
+      return { released: false };
+    }
+    if (left === NOTHING_TO_RELEASE) return { released: false };
+    return { released: true, tierId: owner, remaining: left };
   }
 
   async availability(tierIds: readonly TierId[]): Promise<ReadonlyMap<TierId, number>> {
