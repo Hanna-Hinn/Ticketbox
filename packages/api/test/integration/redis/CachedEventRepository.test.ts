@@ -12,7 +12,6 @@ import type { Event } from "../../../src/domain/entities/Event.js";
 import {
   CACHE_TTL_SECONDS,
   CachedEventRepository,
-  NEGATIVE_TTL_SECONDS,
   REFRESH_MUTEX_MS,
 } from "../../../src/infrastructure/redis/CachedEventRepository.js";
 import { RedisCacheStats } from "../../../src/infrastructure/redis/RedisCacheStats.js";
@@ -125,8 +124,8 @@ describe("CachedEventRepository against Redis", () => {
       expect(events.every((event) => event === null)).toBe(true);
       expect(inner.calls).toBe(1);
       const ttlMs = await redis.pttl(keys.eventCache(UNKNOWN));
-      expect(ttlMs).toBeGreaterThan(0);
-      expect(ttlMs).toBeLessThanOrEqual(NEGATIVE_TTL_SECONDS * 1000);
+      expect(ttlMs).toBeGreaterThan(25_000);
+      expect(ttlMs).toBeLessThanOrEqual(30_000);
     },
   );
 
@@ -146,8 +145,10 @@ describe("CachedEventRepository against Redis", () => {
 
     expect(inner.calls).toBe(1);
     const ttlMs = await redis.pttl(keys.eventCache(UNKNOWN));
-    expect(ttlMs).toBeGreaterThan((NEGATIVE_TTL_SECONDS - 5) * 1000);
-    expect(ttlMs).toBeLessThanOrEqual(NEGATIVE_TTL_SECONDS * 1000);
+    // Literal bounds: the plan says 30 s, and a comparison against the
+    // constant would pass whatever the constant became.
+    expect(ttlMs).toBeGreaterThan(25_000);
+    expect(ttlMs).toBeLessThanOrEqual(30_000);
   });
 
   it("counts hits and misses in Redis", async () => {

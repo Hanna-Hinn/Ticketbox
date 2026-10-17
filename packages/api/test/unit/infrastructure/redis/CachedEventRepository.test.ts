@@ -7,7 +7,6 @@ import {
   CACHE_COMMAND_DEADLINE_MS,
   CachedEventRepository,
   NEGATIVE_SENTINEL,
-  NEGATIVE_TTL_SECONDS,
   REFRESH_MUTEX_MS,
   REFRESH_POLL_MS,
 } from "../../../../src/infrastructure/redis/CachedEventRepository.js";
@@ -167,9 +166,11 @@ describe("CachedEventRepository", () => {
     expect(await repo.findById(UNKNOWN)).toBeNull();
 
     expect(inner.calls).toBe(1);
+    // The literal, not the constant: 30 s is the plan's number, and a test
+    // that compares the constant to itself cannot notice it changing.
     expect(cache.entries.get(keys.eventCache(UNKNOWN))).toEqual({
       value: NEGATIVE_SENTINEL,
-      ttlSeconds: NEGATIVE_TTL_SECONDS,
+      ttlSeconds: 30,
     });
   });
 
@@ -178,10 +179,12 @@ describe("CachedEventRepository", () => {
 
     await repo.findById(DEFAULT_EVENT_ID);
     await repo.findById(DEFAULT_EVENT_ID);
+    await repo.findById(DEFAULT_EVENT_ID);
     await repo.findById(UNKNOWN);
     await repo.findById(UNKNOWN);
 
-    expect(stats).toMatchObject({ hits: 2, misses: 2 });
+    // Asymmetric on purpose: 2 and 2 would not notice the counters swapped.
+    expect(stats).toMatchObject({ hits: 3, misses: 2 });
   });
 
   it("takes the refresh mutex on a miss and lets it expire", async () => {
