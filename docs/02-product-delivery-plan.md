@@ -413,7 +413,7 @@ Stage 2  ■■■■               TB-010 011 012 013
 Stage 3  ■■■                TB-014 015 016
 Stage 4  ■■■ + spike        TB-017 018 019 019a
 Stage 5  ■■■■■■ (1 spike)   TB-020 021* 022 023 024 025      ⭐
-Stage 6  ■■□□ (1 spike)     TB-026 027 028* 028a
+Stage 6  ■■■■ (1 spike)     TB-026 027 028* 028a
 Stage 7  □□□□               TB-029 030 031 032
 Stage 8  □□□□               TB-033 034 035 036
 Stage 9  □□                 TB-037 038

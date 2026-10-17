@@ -142,7 +142,7 @@ Probe an assertion before writing it into a plan. "Navigation entries === 1" sou
 
 ## 8. Follow-ups left behind
 
-- [ ] **TB-025 (E2E-2 partial), TB-027 (E2E-3), TB-030 (E2E-5), TB-038 (E2E-4), TB-037 (all five stable):** the four remaining specs use this config; keep `data-testid` selectors and the `browserErrors` + `documentLoads` pattern.
+- [ ] **TB-025 (E2E-2 partial, done), TB-028a (E2E-3, done — the plan said TB-027), TB-030 (E2E-5), TB-038 (E2E-4), TB-037 (all five stable):** the four remaining specs use this config; keep `data-testid` selectors and the `browserErrors` + `documentLoads` pattern.
 - [ ] **Bumping `@playwright/test`:** one version change in `packages/web/package.json`, then `pnpm --filter @ticketbox/web exec playwright install chromium` locally (the container's `/opt/pw-browsers` holds build 1194 only).
 - [ ] **CI time:** if `playwright install` becomes the slow step, cache `~/.cache/ms-playwright` keyed on the lockfile — not before it hurts.
 - [ ] **Smoke #1:** still asserts `postgres` only; TB-017 adds `redis`.
