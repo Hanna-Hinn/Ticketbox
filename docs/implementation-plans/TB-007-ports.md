@@ -1,6 +1,6 @@
 # TB-007 — Ports
 
-**Status:** Approved
+**Status:** Implemented — see [`docs/tasks/TB-007-ports.md`](../tasks/TB-007-ports.md); the Phase 3 review changed four signatures before any implementation existed (decisions 2, 5, 8 and the §3 notes)
 **Date:** 2026-10-17
 **Task:** TB-007 (`docs/02-product-delivery-plan.md`)
 **Branch:** `feat/TB-007-ports` (stacked on `feat/TB-006-entities-and-value-objects`)
@@ -73,8 +73,10 @@ interface HoldStore {
     token,
     ttlMs,
   ): Promise<{ ok: true; remaining: number } | { ok: false; reason: "insufficient" }>;
-  release(token): Promise<{ released: boolean }>;
-  availability(eventId): Promise<ReadonlyMap<TierId, number>>;
+  release(
+    token,
+  ): Promise<{ released: true; tierId: TierId; remaining: number } | { released: false }>;
+  availability(tierIds: readonly TierId[]): Promise<ReadonlyMap<TierId, number>>;
 }
 
 // HoldRepository.ts   — the Postgres mirror (TB-024): audit trail, never the live truth
@@ -91,7 +93,11 @@ interface OrderRepository {
 
 // EventPublisher.ts   — "hold created" without knowing whether that is Pub/Sub, a Stream, or nothing
 interface EventPublisher {
-  holdCreated(change: { eventId: EventId; tierId: TierId; remaining: number }): Promise<void>;
+  availabilityChanged(change: {
+    eventId: EventId;
+    tierId: TierId;
+    remaining: number;
+  }): Promise<void>;
 }
 ```
 
@@ -101,9 +107,13 @@ interface EventPublisher {
 2. **`HoldStore` is the handbook's signature, with two small tightenings:** `availability` returns `ReadonlyMap` (callers must not mutate what the store hands them), and `qty` stays a plain `number` as the handbook has it — ports carry simple data; the use case unwraps `Quantity.value` at the boundary. A `get(token)` method is _not_ added: `GetHoldUseCase` is TB-020, and that task adds what it needs.
 3. **`HoldRepository` is `save` + `setStatus`.** TB-024's Tests line is exactly "creating a hold writes a row with status `active`; releasing updates it to `released`". `HoldStatus` lives in the port file: it is a storage-side lifecycle (the live hold in Redis has no status — it exists or it doesn't), so it is not a domain concept and does not go into `Hold`.
 4. **`OrderRepository` is `save` only.** TB-029 confirms a hold into an order; nothing in the delivery plan reads an order back by id (the UI shows the order number from the confirm response; TB-030 replays the stored response from Redis). A `findById` nobody calls is speculation.
-5. **`EventPublisher` has one method, `holdCreated`, as the handbook's trace shows (§2.5 step 7).** `holdReleased`, `orderConfirmed` etc. arrive with TB-023 / TB-033, when there is a caller. The payload is the availability change, not the `Hold` entity: what a subscriber needs is "tier X now has N left".
+5. **`EventPublisher` has one method, `availabilityChanged`** _(changed after review; the handbook's trace §2.5 step 7 says `holdCreated`)_. A hold created (TB-008), released (TB-023) or swept (TB-026) all produce the identical `{ eventId, tierId, remaining }`, and TB-037's subscriber consumes only the effect. One method per cause would be three methods with one payload shape, and every fake and adapter growing with them. Note for TB-033/034: the `StreamPublisher` that carries order-confirmed work to a worker is a _different_ port (a job, not an availability hint), not a second method here.
 6. **No barrel `index.ts`.** Imports name the file; a barrel is a place for circular imports to hide.
 7. **`readonly` on every array/map a port returns.** The same lesson TB-006 paid for: a port that hands out a mutable collection hands out shared state.
+8. **`HoldRepository.setStatus` takes `HoldOutcome = Exclude<HoldStatus, "active">`** _(review)_. A row is born `active` through `save` and ends in exactly one other state; a use case that could rewind `converted` to `active` could rewrite the audit trail. `HoldStatus` stays in the application layer: the use cases (release, sweep, confirm) are what choose a status.
+9. **Cost of decision 1, for TB-010 to confront** _(review)_: `listUpcoming` must compute `total − sold − active holds` for every tier of every upcoming event, because `TicketTier.remaining` is required and the list page reads only `name`/`venue`/`startsAt`. That is also the query TB-013 benchmarks and TB-018 caches. A lighter list shape is a TB-010 plan question, not a TB-007 one.
+10. **One transaction, two ports — for TB-029 to decide** _(review)_: confirming an order writes `orders` + `order_items` _and_ marks the hold `converted`, and TB-033 adds an outbox row "in the same transaction". `OrderRepository.save` and `HoldRepository.setStatus` cannot share a transaction as defined. No unit-of-work port is added now (speculative); TB-029 must either have `OrderRepository.save` mark the hold converted inside its own transaction, or introduce a transaction port — explicitly, in its plan.
+11. **Open questions this port shape leaves for the tasks that implement it** _(review)_: TB-029 needs an `OrderId` source (`TokenGenerator.next()` gives only a `HoldToken`; `crypto.randomUUID()` in a use case is banned — extend the port or add an `IdGenerator` then). TB-022 must decide what `reserve` returns when the tier's counter key does not exist (after `FLUSHDB`, before a reconcile): "insufficient" or a distinct state matters to TB-027 and TB-039's 503. TB-022 must also name which clock the sweeper's ZSET score comes from — `Clock.now()` sets the `expiresAt` the UI counts down from, while the adapter only receives a relative `ttlMs`.
 
 ### New or changed Redis keys / Lua scripts / migrations
 
