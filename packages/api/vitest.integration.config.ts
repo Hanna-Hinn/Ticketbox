@@ -10,5 +10,9 @@ export default defineConfig({
     include: ["test/integration/**/*.test.ts"],
     environment: "node",
     testTimeout: 10_000,
+    // Test files share one real ticketbox_test database, and the migration
+    // tests drop its schema. Files run one at a time; tests within a file
+    // still run in order on the same connection.
+    fileParallelism: false,
   },
 });
