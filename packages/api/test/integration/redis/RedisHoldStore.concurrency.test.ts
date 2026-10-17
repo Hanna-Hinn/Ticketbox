@@ -56,3 +56,26 @@ describe("200 concurrent reserves of 2 against a tier with 10 remaining", () => 
     },
   );
 });
+
+// Also the only test that exercises the script's own compare through the
+// adapter: every sequential release is answered by the adapter's prelude
+// read before the script runs. Do not trim the runs.
+describe("50 concurrent releases of the same hold", () => {
+  it.each(Array.from({ length: 10 }, (_, i) => i + 1))(
+    "gives the tickets back exactly once (run %i)",
+    async () => {
+      await redis.hset(keys.tier(TIER), "remaining", 10);
+      const hold = aHold().forTier(TIER).withToken("tok-1").withQty(4).build();
+      await store.reserve(hold);
+
+      const results = await Promise.all(
+        Array.from({ length: 50 }, () => store.release(hold.token)),
+      );
+
+      expect(results.filter((result) => result.released)).toHaveLength(1);
+      expect(await redis.hget(keys.tier(TIER), "remaining")).toBe("10");
+      expect(await redis.exists(keys.hold(hold.token))).toBe(0);
+      expect(await redis.zcard(keys.tierHolds(TIER))).toBe(0);
+    },
+  );
+});

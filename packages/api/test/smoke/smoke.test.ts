@@ -39,7 +39,14 @@ describe("smoke", () => {
   });
 
   it.todo("POST /holds for 1 ticket returns 201 — TB-025 (route) over TB-022 (Lua reserve)");
-  it.todo("DELETE /holds/:token returns 200 — TB-023 (release) once the route exists");
+  it("DELETE /holds/:token is 200 with released: false for a token nobody holds", async () => {
+    const response = await fetch(`${baseUrl}/holds/00000000-0000-4000-8000-000000000000`, {
+      method: "DELETE",
+    });
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ released: false });
+  });
   it("the web app's root HTML is served (needs pnpm dev:web)", async () => {
     const response = await fetch(`${webUrl}/`);
 

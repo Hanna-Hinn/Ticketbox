@@ -6,6 +6,8 @@ import { GetEventAvailabilityUseCase } from "../../../src/application/use-cases/
 import { ListUpcomingEventsUseCase } from "../../../src/application/use-cases/ListUpcomingEvents.js";
 import { EventController } from "../../../src/presentation/http/controllers/EventController.js";
 import { StatsController } from "../../../src/presentation/http/controllers/StatsController.js";
+import { ReleaseHoldUseCase } from "../../../src/application/use-cases/ReleaseHold.js";
+import { HoldController } from "../../../src/presentation/http/controllers/HoldController.js";
 import { buildServer } from "../../../src/presentation/http/server.js";
 import { FakeClock } from "../../fakes/FakeClock.js";
 import { InMemoryCacheStats } from "../../fakes/InMemoryCacheStats.js";
@@ -24,6 +26,9 @@ const unusedEvents = new EventController(
   ),
 );
 const ok = (): Promise<void> => Promise.resolve();
+const unusedHolds = new HoldController(
+  new ReleaseHoldUseCase(new InMemoryHoldStore(new FakeClock("2026-01-01T00:00:00.000Z"))),
+);
 
 let app: FastifyInstance;
 
@@ -32,6 +37,7 @@ function serverWith(stats: InMemoryCacheStats): FastifyInstance {
     logger: pino({ level: "silent" }),
     events: unusedEvents,
     stats: new StatsController(new GetCacheStatsUseCase(stats)),
+    holds: unusedHolds,
     checks: { postgres: ok, redis: ok },
   });
   return app;

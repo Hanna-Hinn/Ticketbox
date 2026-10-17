@@ -2,9 +2,11 @@ import { randomUUID } from "node:crypto";
 import Fastify, { type FastifyBaseLogger, type FastifyInstance } from "fastify";
 import { serializerCompiler, validatorCompiler } from "fastify-type-provider-zod";
 import type { EventController } from "./controllers/EventController.js";
+import type { HoldController } from "./controllers/HoldController.js";
 import type { StatsController } from "./controllers/StatsController.js";
 import { registerErrorHandling } from "./errors.js";
 import { registerEventRoutes } from "./routes/events.js";
+import { registerHoldRoutes } from "./routes/holds.js";
 import { registerStatsRoutes } from "./routes/stats.js";
 import {
   DEFAULT_CHECK_TIMEOUT_MS,
@@ -15,6 +17,7 @@ import {
 export interface ServerDeps {
   readonly logger: FastifyBaseLogger;
   readonly events: EventController;
+  readonly holds: HoldController;
   readonly stats: StatsController;
   readonly checks: DependencyChecks;
   // Only a test has a reason to set this: a tiny real bound beats a 2 s wait.
@@ -54,6 +57,7 @@ export function buildServer(deps: ServerDeps): FastifyInstance {
 
   registerErrorHandling(app);
   registerEventRoutes(app, deps.events);
+  registerHoldRoutes(app, deps.holds);
   registerStatsRoutes(app, deps.stats);
   registerHealthRoutes(app, deps.checks, deps.healthCheckTimeoutMs ?? DEFAULT_CHECK_TIMEOUT_MS);
   return app;

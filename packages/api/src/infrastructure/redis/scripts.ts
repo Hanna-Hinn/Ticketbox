@@ -6,13 +6,14 @@ import type { ClientContext, Redis, Result } from "ioredis";
 const LUA_DIR = new URL("../../../../../scripts/lua/", import.meta.url);
 
 export const CREATE_HOLD_LUA = readFileSync(new URL("create_hold.lua", LUA_DIR), "utf8");
+export const RELEASE_HOLD_LUA = readFileSync(new URL("release_hold.lua", LUA_DIR), "utf8");
 
 // ioredis adds a defined command to the client at runtime only. Its
 // RedisCommander interface is left open for exactly this augmentation; the
 // signature here is the script's KEYS then ARGV, in order. The augmentation
-// is global to the module: every Redis value in this package types
-// createHold, but only a client that went through defineHoldScripts has it
-// at runtime — call it from RedisHoldStore and nowhere else.
+// is global to the module: every Redis value in this package types both
+// commands, but only a client that went through defineHoldScripts has them
+// at runtime — call them from RedisHoldStore and nowhere else.
 declare module "ioredis" {
   interface RedisCommander<Context extends ClientContext = { type: "default" }> {
     createHold(
@@ -26,6 +27,13 @@ declare module "ioredis" {
       expiresAtMs: number,
       ttlMs: number,
     ): Result<number, Context>;
+    releaseHold(
+      holdKey: string,
+      tierKey: string,
+      tierHoldsKey: string,
+      token: string,
+      tierId: string,
+    ): Result<number, Context>;
   }
 }
 
@@ -34,4 +42,5 @@ declare module "ioredis" {
 // in node_modules/ioredis/built/Script.js.
 export function defineHoldScripts(redis: Redis): void {
   redis.defineCommand("createHold", { numberOfKeys: 3, lua: CREATE_HOLD_LUA });
+  redis.defineCommand("releaseHold", { numberOfKeys: 3, lua: RELEASE_HOLD_LUA });
 }
