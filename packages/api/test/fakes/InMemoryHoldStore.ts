@@ -7,7 +7,7 @@ import type { TierId } from "../../src/domain/value-objects/Ids.js";
 // exactly why the concurrency test lives against the real store (TB-022).
 export class InMemoryHoldStore implements HoldStore {
   private readonly remaining = new Map<TierId, number>();
-  private readonly holds = new Map<HoldToken, { tierId: TierId; qty: number; ttlMs: number }>();
+  private readonly holds = new Map<HoldToken, { tierId: TierId; qty: number }>();
 
   seed(tierId: TierId, remaining: number): void {
     this.remaining.set(tierId, remaining);
@@ -17,13 +17,15 @@ export class InMemoryHoldStore implements HoldStore {
     tierId: TierId,
     qty: number,
     token: HoldToken,
-    ttlMs: number,
   ): Promise<{ ok: true; remaining: number } | { ok: false; reason: "insufficient" }> {
+    // A duplicate token is a test-authoring bug; silently overwriting the
+    // first hold would leak its quantity, which a fake must make loud.
+    if (this.holds.has(token)) throw new Error(`token ${token} already holds a reservation`);
     const current = this.remaining.get(tierId);
     if (current === undefined || current < qty) return { ok: false, reason: "insufficient" };
     const left = current - qty;
     this.remaining.set(tierId, left);
-    this.holds.set(token, { tierId, qty, ttlMs });
+    this.holds.set(token, { tierId, qty });
     return { ok: true, remaining: left };
   }
 

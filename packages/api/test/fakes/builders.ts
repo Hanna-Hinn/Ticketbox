@@ -11,9 +11,9 @@ export const DEFAULT_EVENT_ID: EventId = eventId("11111111-1111-4111-8111-111111
 class TierBuilder {
   private id = "11111111-1111-4111-8111-aaaaaaaaaaaa";
   private event: EventId = DEFAULT_EVENT_ID;
-  private name = "General";
-  private priceCents = 2000;
-  private total = 100;
+  private readonly name = "General";
+  private readonly priceCents = 2000;
+  private readonly total = 100;
   private remaining = 10;
 
   withId(id: string): this {
@@ -21,23 +21,8 @@ class TierBuilder {
     return this;
   }
 
-  forEvent(id: EventId): this {
-    this.event = id;
-    return this;
-  }
-
-  withName(name: string): this {
-    this.name = name;
-    return this;
-  }
-
-  withPriceCents(cents: number): this {
-    this.priceCents = cents;
-    return this;
-  }
-
-  withTotal(total: number): this {
-    this.total = total;
+  forEvent(id: string): this {
+    this.event = eventId(id);
     return this;
   }
 
@@ -60,18 +45,13 @@ class TierBuilder {
 
 class EventBuilder {
   private id: EventId = DEFAULT_EVENT_ID;
-  private name = "Rooftop Jazz Night";
-  private venue = "The Terrace";
+  private readonly name = "Rooftop Jazz Night";
+  private readonly venue = "The Terrace";
   private startsAt = new Date("2026-12-05T19:30:00.000Z");
   private tiers: TicketTier[] = [];
 
   withId(id: string): this {
     this.id = eventId(id);
-    return this;
-  }
-
-  withName(name: string): this {
-    this.name = name;
     return this;
   }
 

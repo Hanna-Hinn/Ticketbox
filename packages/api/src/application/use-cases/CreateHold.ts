@@ -37,7 +37,14 @@ export class CreateHoldUseCase {
     if (tier === undefined) return { ok: false, reason: "unknown-tier" };
 
     const token = this.tokens.next();
+    // Read the clock before reserving, never after: the expiry the client is
+    // told must be no later than the store's real one, or the UI counts down
+    // past a key the store has already dropped.
     const now = this.clock.now();
+    // Build the entity before touching the store: Hold.create is where ttlMs
+    // and the clock reading are validated, and a reserve followed by a throw
+    // is inventory nobody can release.
+    const hold = Hold.create({ token, tierId: tier.id, qty, now, ttlMs: this.holdTtlMs });
 
     // The only place the decision is made. No pre-check against
     // tier.remaining: that is a snapshot, and two answers to one question
@@ -45,7 +52,6 @@ export class CreateHoldUseCase {
     const reserved = await this.holds.reserve(tier.id, qty.value, token, this.holdTtlMs);
     if (!reserved.ok) return { ok: false, reason: "insufficient" };
 
-    const hold = Hold.create({ token, tierId: tier.id, qty, now, ttlMs: this.holdTtlMs });
     return { ok: true, token, expiresAt: hold.expiresAt, remaining: reserved.remaining };
   }
 }
