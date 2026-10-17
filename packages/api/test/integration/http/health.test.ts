@@ -1,4 +1,5 @@
 import type { FastifyInstance } from "fastify";
+import pino from "pino";
 import { afterEach, describe, expect, it } from "vitest";
 import { GetEventAvailabilityUseCase } from "../../../src/application/use-cases/GetEventAvailability.js";
 import { ListUpcomingEventsUseCase } from "../../../src/application/use-cases/ListUpcomingEvents.js";
@@ -23,7 +24,12 @@ const hung = (): Promise<void> => new Promise(() => undefined);
 let app: FastifyInstance;
 
 function serverWith(checks: ServerDeps["checks"]): FastifyInstance {
-  app = buildServer({ events: unusedEvents, checks, healthCheckTimeoutMs: 50 });
+  app = buildServer({
+    logger: pino({ level: "silent" }),
+    events: unusedEvents,
+    checks,
+    healthCheckTimeoutMs: 50,
+  });
   return app;
 }
 

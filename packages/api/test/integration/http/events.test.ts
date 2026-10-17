@@ -1,6 +1,7 @@
 import { fileURLToPath } from "node:url";
 import type { FastifyInstance } from "fastify";
 import type pg from "pg";
+import pino from "pino";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { GetEventAvailabilityUseCase } from "../../../src/application/use-cases/GetEventAvailability.js";
 import { ListUpcomingEventsUseCase } from "../../../src/application/use-cases/ListUpcomingEvents.js";
@@ -37,6 +38,7 @@ beforeAll(async () => {
   clock = new FakeClock("2000-01-01T00:00:00.000Z");
   getAvailability = new GetEventAvailabilityUseCase(repo, holds);
   app = buildServer({
+    logger: pino({ level: "silent" }),
     events: new EventController(new ListUpcomingEventsUseCase(repo, clock), getAvailability),
     checks: {},
   });

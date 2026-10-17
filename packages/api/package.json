@@ -3,6 +3,7 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "dev": "tsx watch src/main/server.ts",
     "typecheck": "tsc --noEmit",
     "test:unit": "vitest run --config vitest.unit.config.ts",
     "test:integration": "vitest run --config vitest.integration.config.ts --passWithNoTests",
@@ -22,6 +23,7 @@
     "fastify": "^5.12.7",
     "fastify-type-provider-zod": "^7.0.0",
     "pg": "^8.23.1",
+    "pino": "^10.4.0",
     "zod": "^4.4.3"
   }
 }
