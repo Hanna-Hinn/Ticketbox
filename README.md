@@ -74,7 +74,7 @@ Four levels, distinguished by what's real vs. faked:
 ```bash
 pnpm test:unit
 pnpm test:integration   # needs: docker compose up
-pnpm test:smoke         # needs: api running
+pnpm test:smoke         # needs: api and web running
 pnpm test:e2e           # needs: full stack
 pnpm test:all
 ```
