@@ -473,6 +473,86 @@ describe("RedisHoldStore.sweep (sweep_hold.lua)", () => {
   });
 });
 
+describe("RedisHoldStore as InventoryRepair (held, rebuild)", () => {
+  it("lists every entry of the tier with its quantity, expired-but-unswept included, and no other tier's", async () => {
+    await redis.hset(keys.tier(TIER), "remaining", 10);
+    await redis.hset(keys.tier(OTHER), "remaining", 10);
+    await store.reserve(held(2, "tok-alive"));
+    await expiredHold(3, "tok-gone");
+    await store.reserve(
+      aHold().forTier(OTHER).withToken("tok-other").withQty(1).createdAt(CREATED).build(),
+    );
+
+    const listed = await store.held(TIER);
+
+    expect(listed.map((entry) => [entry.token, entry.qty]).sort()).toEqual([
+      ["tok-alive", 2],
+      ["tok-gone", 3],
+    ]);
+  });
+
+  it("skips an entry it cannot read without removing it — that is the sweeper's job", async () => {
+    await redis.zadd(keys.tierHolds(TIER), "1", "tok-old", "2", "tok-ok:2");
+
+    const listed = await store.held(TIER);
+
+    expect(listed).toEqual([{ token: holdToken("tok-ok"), qty: 2 }]);
+    expect(await redis.zcard(keys.tierHolds(TIER))).toBe(2);
+  });
+
+  it("overwrites the counter and answers the value it replaced", async () => {
+    await redis.hset(keys.tier(TIER), "remaining", 500);
+
+    const result = await store.rebuild(TIER, 1000);
+
+    expect(result).toEqual({ before: 500 });
+    expect(await redis.hget(keys.tier(TIER), "remaining")).toBe("1000");
+  });
+
+  it("answers before: null for a counter that did not exist, and creates it", async () => {
+    const result = await store.rebuild(TIER, 1000);
+
+    expect(result).toEqual({ before: null });
+    expect(await redis.hget(keys.tier(TIER), "remaining")).toBe("1000");
+  });
+
+  it("reports a hand-edited non-integer counter as absent, and still overwrites it", async () => {
+    await redis.hset(keys.tier(TIER), "remaining", "3.5");
+
+    const result = await store.rebuild(TIER, 7);
+
+    expect(result).toEqual({ before: null });
+    expect(await redis.hget(keys.tier(TIER), "remaining")).toBe("7");
+  });
+
+  it("writes a counter the script then decrements from", async () => {
+    await store.rebuild(TIER, 5);
+
+    const reserved = await store.reserve(held(2));
+
+    expect(reserved).toEqual({ ok: true, remaining: 3 });
+  });
+
+  it("throws when the counter key is the wrong type, and writes nothing", async () => {
+    // Both replies of the transaction are read: a transaction is isolated,
+    // not rolled back, and a failing HGET is also a failing HSET here.
+    await redis.set(keys.tier(TIER), "not a hash");
+
+    await expect(store.rebuild(TIER, 1000)).rejects.toThrow(/WRONGTYPE/);
+
+    expect(await redis.get(keys.tier(TIER))).toBe("not a hash");
+  });
+
+  it("fails fast on a client that is not connected", async () => {
+    const disconnected = new Redis(testRedisUrl(), { lazyConnect: true });
+    const offline = new RedisHoldStore(disconnected, pino({ level: "silent" }));
+
+    await expect(offline.held(TIER)).rejects.toThrow(/cannot list held/);
+    await expect(offline.rebuild(TIER, 1)).rejects.toThrow(/cannot rebuild/);
+    disconnected.disconnect();
+  });
+});
+
 describe("RedisHoldStore.availability", () => {
   it("returns the live count of every seeded tier and nothing for the rest", async () => {
     await redis.hset(keys.tier(TIER), "remaining", 7);

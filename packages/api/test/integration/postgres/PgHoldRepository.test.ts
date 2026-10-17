@@ -73,6 +73,35 @@ afterEach(async () => {
   await client.query("ROLLBACK");
 });
 
+describe("PgHoldRepository.activeTokens", () => {
+  it("lists the active rows of this tier only — not released ones, not another tier's", async () => {
+    const BALCONY = tierId("11111111-1111-4111-8111-bbbbbbbbbbbb");
+    const row = (token: string, tier = GENERAL): Hold =>
+      aHold()
+        .forTier(tier)
+        .withToken(token)
+        .withQty(1)
+        .createdAt("2026-01-01T10:00:00.000Z")
+        .build();
+    await repo.save(row("11111111-1111-4111-8111-aaaaaaaaaaa1"));
+    await repo.save(row("11111111-1111-4111-8111-aaaaaaaaaaa2"));
+    await repo.save(row("11111111-1111-4111-8111-aaaaaaaaaaa3"));
+    await repo.setStatus(holdToken("11111111-1111-4111-8111-aaaaaaaaaaa3"), "released");
+    await repo.save(row("11111111-1111-4111-8111-bbbbbbbbbbb1", BALCONY));
+
+    const tokens = await repo.activeTokens(GENERAL);
+
+    expect([...tokens].sort()).toEqual([
+      "11111111-1111-4111-8111-aaaaaaaaaaa1",
+      "11111111-1111-4111-8111-aaaaaaaaaaa2",
+    ]);
+  });
+
+  it("answers nothing for a tier with no rows", async () => {
+    expect(await repo.activeTokens(GENERAL)).toEqual([]);
+  });
+});
+
 describe("PgHoldRepository", () => {
   it("writes the hold as an active row with the hold's own instants", async () => {
     const hold = held(2);

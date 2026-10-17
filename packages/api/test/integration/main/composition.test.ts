@@ -46,6 +46,9 @@ afterAll(async () => {
 // before a test that expects the cache to be written.
 beforeEach(async () => {
   await redis.flushdb();
+  // Every test owns its rows too: a hold left by the previous case would be
+  // a row with no hash here, which is exactly what reconcile looks for.
+  await db.query("DELETE FROM holds");
   // What `pnpm seed` does for dev and CI (TB-025): the live counters.
   await seedLiveCounters(
     redis,
@@ -219,6 +222,137 @@ describe("compose", () => {
     ).toBe(1000);
     expect(row.rows[0]?.status).toBe("expired");
     expect(await redis.zcard(keys.tierHolds(general))).toBe(0);
+  });
+
+  describe("POST /_admin/reconcile/:eventId", () => {
+    const jazz = "11111111-1111-4111-8111-111111111111";
+    const general = tierId("11111111-1111-4111-8111-aaaaaaaaaaaa");
+    const generalOn = (page: { json: <T>() => T }): number | undefined =>
+      page
+        .json<{ tiers: { id: string; remaining: number }[] }>()
+        .tiers.find((t) => t.id === general)?.remaining;
+    const hold = async (qty: number): Promise<string> => {
+      const created = await system.app.inject({
+        method: "POST",
+        url: "/holds",
+        payload: { eventId: jazz, tierId: general, qty },
+      });
+      return created.json<{ token: string }>().token;
+    };
+    const reconcile = async (): Promise<{
+      tiers: { tierId: string; before: number | null; after: number }[];
+      rowsExpired: number;
+      unrecorded: string[];
+    }> => {
+      const response = await system.app.inject({
+        method: "POST",
+        url: `/_admin/reconcile/${jazz}`,
+      });
+      expect(response.statusCode).toBe(200);
+      return response.json();
+    };
+    const statusOf = async (token: string): Promise<string | undefined> =>
+      (await db.query<{ status: string }>("SELECT status FROM holds WHERE token = $1", [token]))
+        .rows[0]?.status;
+
+    it("the Acceptance line: after FLUSHDB, one call restores correct availability", async () => {
+      const tokens = [await hold(1), await hold(1), await hold(1)];
+      await redis.flushdb();
+      const beforeCall = await system.app.inject({ url: `/events/${jazz}` });
+
+      const report = await reconcile();
+      const afterCall = await system.app.inject({ url: `/events/${jazz}` });
+      const liveAfter = await redis.hget(keys.tier(general), "remaining");
+      const again = await hold(2);
+
+      // Before: no live counter, the computed count still subtracts three
+      // rows for holds that no longer exist.
+      expect(generalOn(beforeCall)).toBe(997);
+      expect(report.tiers.find((t) => t.tierId === general)).toEqual({
+        tierId: general,
+        before: null,
+        after: 1000,
+      });
+      expect(report.rowsExpired).toBe(3);
+      expect(report.unrecorded).toEqual([]);
+      for (const token of tokens) expect(await statusOf(token)).toBe("expired");
+      expect(generalOn(afterCall)).toBe(1000);
+      expect(liveAfter).toBe("1000");
+      // And the write path decrements from the rebuilt number.
+      expect(again).toMatch(/[0-9a-f-]{36}/);
+      expect(await redis.hget(keys.tier(general), "remaining")).toBe("998");
+    });
+
+    it("artificial drift in the counter is reported and corrected, read from Postgres and not the cache", async () => {
+      // Warm the cache first: a reconcile that read it would write 1000.
+      await system.app.inject({ url: `/events/${jazz}` });
+      await hold(2);
+      await redis.hset(keys.tier(general), "remaining", 500);
+
+      const report = await reconcile();
+
+      expect(report.tiers.find((t) => t.tierId === general)).toEqual({
+        tierId: general,
+        before: 500,
+        after: 998,
+      });
+      expect(report.rowsExpired).toBe(0);
+      expect(await redis.hget(keys.tier(general), "remaining")).toBe("998");
+    });
+
+    it("a hold whose index key was evicted keeps its row and its place in the count, and a second call agrees", async () => {
+      const token = await hold(2);
+      await redis.del(keys.tierHolds(general));
+
+      const first = await reconcile();
+      const second = await reconcile();
+
+      expect(first.rowsExpired).toBe(0);
+      expect(await statusOf(token)).toBe("active");
+      expect(first.tiers.find((t) => t.tierId === general)).toEqual({
+        tierId: general,
+        before: 998,
+        after: 998,
+      });
+      expect(second.tiers.find((t) => t.tierId === general)).toEqual({
+        tierId: general,
+        before: 998,
+        after: 998,
+      });
+    });
+
+    it("a hold the rows never knew about is subtracted and reported, and its release lands on the exact number", async () => {
+      const token = await hold(3);
+      await db.query("DELETE FROM holds WHERE token = $1", [token]);
+      await redis.hset(keys.tier(general), "remaining", 500);
+
+      const report = await reconcile();
+      const released = await system.app.inject({ method: "DELETE", url: `/holds/${token}` });
+
+      expect(report.unrecorded).toEqual([token]);
+      expect(report.tiers.find((t) => t.tierId === general)?.after).toBe(997);
+      expect(released.json()).toEqual({ released: true });
+      expect(await redis.hget(keys.tier(general), "remaining")).toBe("1000");
+    });
+
+    it("a row for a hold that is gone from the store is expired, and the count stops subtracting it", async () => {
+      const token = await hold(2);
+      await redis.del(keys.hold(holdToken(token)));
+      await redis.zrem(keys.tierHolds(general), `${token}:2`);
+      // The counter still carries the decrement nobody will ever restore.
+      const before = await redis.hget(keys.tier(general), "remaining");
+
+      const report = await reconcile();
+
+      expect(before).toBe("998");
+      expect(report.rowsExpired).toBe(1);
+      expect(await statusOf(token)).toBe("expired");
+      expect(report.tiers.find((t) => t.tierId === general)).toEqual({
+        tierId: general,
+        before: 998,
+        after: 1000,
+      });
+    });
   });
 
   it("refuses with 409 INSUFFICIENT when the live counter says no", async () => {
