@@ -1,6 +1,6 @@
 # TB-016 — First E2E
 
-**Status:** Approved
+**Status:** Implemented — see [`docs/tasks/TB-016-first-e2e.md`](../tasks/TB-016-first-e2e.md) §3 for where reality diverged
 **Date:** 2026-10-17
 **Task:** TB-016 (`docs/02-product-delivery-plan.md`)
 **Branch:** `feat/TB-016-first-e2e` (stacked on `feat/TB-015-typed-api-client`)
