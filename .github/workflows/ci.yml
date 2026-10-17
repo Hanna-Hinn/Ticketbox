@@ -1,0 +1,63 @@
+name: CI
+
+# Runs on every PR regardless of base branch: stacked task PRs in this repo
+# target feature branches, not main, and they need the gates too.
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+# Nothing here uses GITHUB_TOKEN; say so.
+permissions:
+  contents: read
+
+# Superseded PR runs are cancelled; main runs are not, so every commit on
+# main keeps its own verdict even when two merges land minutes apart.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  # Fail fast and cheap. A lint error should cost ~40 seconds, not a Docker
+  # pull and a full integration run.
+  checks:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4 # version comes from package.json "packageManager"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm typecheck
+      - run: pnpm lint
+      - run: pnpm test:unit
+      - run: pnpm build
+
+  # Real engines, real schema, real seed: the TB-004 acceptance line runs on
+  # every PR. Smoke (TB-013) and E2E (TB-016) append their own steps here.
+  integration:
+    needs: checks
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      DATABASE_URL: postgresql://ticketbox:ticketbox@localhost:5432/ticketbox
+      REDIS_URL: redis://localhost:6379
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      # --wait blocks on the compose healthchecks; nothing in CI opens
+      # RedisInsight, so it is not started.
+      - run: docker compose up -d --wait postgres redis
+      - run: pnpm migrate
+      - run: pnpm seed
+      - run: pnpm test:integration
+      - if: failure()
+        run: docker compose logs
