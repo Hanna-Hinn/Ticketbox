@@ -23,9 +23,11 @@ test.afterEach(async ({ request }) => {
   if (token !== undefined) await request.delete(`/api/holds/${token}`);
 });
 
-async function landOnCheckout(page: Page): Promise<void> {
+async function landOnCheckout(page: Page): Promise<string> {
   await expect(page).toHaveURL(CHECKOUT);
   token = CHECKOUT.exec(page.url())?.[1];
+  if (token === undefined) throw new Error(`no token in ${page.url()}`);
+  return token;
 }
 
 async function remainingMsOf(request: APIRequestContext, held: string): Promise<number> {
@@ -56,14 +58,14 @@ test("get two tickets, watch the countdown, release, see the number come back", 
   await general.getByTestId("qty").fill("2");
   await general.getByTestId("get-tickets").click();
 
-  await landOnCheckout(page);
+  const held = await landOnCheckout(page);
   const countdown = page.getByTestId("countdown");
   // The stack decides the TTL (120 s for dev, shorter in CI); the spec asks
   // for a timer that reads what the server says is left — the browser
   // fetched a moment before the spec did and has ticked since, so within a
   // couple of seconds below — and that moves.
   await expect(countdown).toHaveText(/^\d+:\d\d$/);
-  const serverSeconds = Math.ceil((await remainingMsOf(request, token ?? "")) / 1000);
+  const serverSeconds = Math.ceil((await remainingMsOf(request, held)) / 1000);
   const first = await countdown.textContent();
   expect(secondsShown(first)).toBeGreaterThanOrEqual(serverSeconds - 2);
   expect(secondsShown(first)).toBeLessThanOrEqual(serverSeconds + 1);
