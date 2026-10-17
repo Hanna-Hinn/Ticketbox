@@ -130,13 +130,34 @@ _(These numbers are the "Naive" row in `BENCHMARKS.md` §7. TB-022 fills the Lua
 
 **Task:** enable `notify-keyspace-events Ex`, subscribe to expiry events, disconnect the subscriber for 20 seconds, reconnect.
 
-**Date:**
+**Date:** 2026-10-17, branch `spike/TB-028-keyspace-notifications-flushdb` (a throwaway script, run and deleted; this entry is the deliverable). Local Redis 7.0.15, DB 9, `CONFIG SET notify-keyspace-events Ex` for the run and `""` after — a runtime setting, not persisted; a restarted Redis forgets it, which is its own small lesson.
 
-**Number of keys that expired while disconnected:**
+**What I did:** subscribed an ioredis client to `__keyevent@9__:expired`, wrote 12 keys with `PX` from 1 s to 34 s in 3 s steps, closed the subscriber at t = 2 s, opened a new one at t = 22 s, and logged every event with the gap between the key's planned expiry and the event's arrival. Then the contrast: the same 12 TTLs as real holds through `RedisHoldStore.reserve`, no subscriber at all, and `store.expired(now)` at t = 36 s.
 
-**Number of expiry events received after reconnecting:**
+**What I expected** (scratchpad, before running): the 7 keys expiring inside [2 s, 22 s] produce no event anywhere — Pub/Sub has no history, no pending list, nothing to replay — so 5 of 12 arrive; delays of tens of milliseconds from the active expiry cycle; the index lists all 12 because it is state, and state is still there when you come back.
 
-**Why the sweeper (ZSET + polling) doesn't have this problem:**
+**What actually happened:**
+
+```
+0.03s   wrote 12 keys, PX 1000,4000,…,34000 ms
+1.10s   sub#1 got expired: k:1000   (late by 96 ms)
+2.03s   sub#1 disconnected for 20 s
+22.05s  sub#2 subscribed
+22.09s  sub#2 got expired: k:22000  (late by 86 ms)
+25.10s  sub#2 got expired: k:25000  (late by 101 ms)
+28.11s  sub#2 got expired: k:28000  (late by 113 ms)
+31.13s  sub#2 got expired: k:31000  (late by 127 ms)
+34.04s  sub#2 got expired: k:34000  (late by 38 ms)
+
+RESULT part 1:  events received = 6 of 12; keys still present = 0
+RESULT contrast: at t+36 s store.expired(now) lists 12 of 12 (hashes present: 0); counter = 88
+```
+
+**Number of keys that expired while disconnected:** **6** (PX 4, 7, 10, 13, 16, 19 s). Gone from the keyspace — `KEYS` finds none of the 12 — and no event for any of them, before, during or after. Redis does not know a subscriber was missing; there is nothing on the server that remembers a message was not delivered.
+
+**Number of expiry events received after reconnecting:** **5**, plus the one before the disconnect: 6 of 12. One more than I predicted, and the extra one is the lesson about timing the delivery plan asks for: the key with `PX 22000` was planned to expire at 22.000 s, the new subscriber was up at 22.05 s, and the event arrived at 22.09 s — the key was _actually removed_ 86 ms after its TTL passed, by the active expiry cycle's next sampling, which happened to be after the reconnect. The notification fires at removal, not at the instant the TTL elapses; every delay in the log is that cycle: 38–127 ms here, on an idle server with 12 keys. A key that nothing touches and that the sampler does not pick can sit past its TTL for longer, and the event with it.
+
+**Why the sweeper (ZSET + polling) doesn't have this problem:** the index is _state_: `ZADD tier:holds expiresAt "<token>:<qty>"` is written once, by the same script that creates the hold, and stays until something removes it. A worker that was away for 20 seconds — or 20 minutes — asks `ZRANGEBYSCORE -inf now` when it comes back and is handed every entry whose time has passed, in order, with the quantity to restore; the contrast run listed 12 of 12 at t = 36 s with every hash already gone, and the counter at 88 because nothing had restored anything yet, which is exactly the number the sweeper would then fix. An expiry event is a _message_: emitted once, to whoever is listening at that instant, and then it does not exist. Pub/Sub is fire-and-forget by design (handbook §6: no history, no PEL, no `XACK`); a Stream would at least keep the message for a consumer group, but a notification that fires at removal still tells you nothing you can act on atomically — you would still need the index to know the quantity, and you would still need the compare-and-restore script to pay only once. The polling costs a `SCAN` and a `ZRANGEBYSCORE` per tier every five seconds; the event listener costs a second mechanism whose failure mode is silent. (Also: notifications are per database and off by default; the sweeper works on any Redis without touching its config.)
 
 ---
 
@@ -144,11 +165,28 @@ _(These numbers are the "Naive" row in `BENCHMARKS.md` §7. TB-022 fills the Lua
 
 **Task:** create 20 holds, `FLUSHDB`, observe availability, then reconcile.
 
-**Date:**
+**Date:** 2026-10-17, same branch. The API from TB-027 on DB 0 with the default 120 s TTL, the sweeper worker running, counters seeded; `curl`, `redis-cli`, `psql`.
 
-**Availability shown immediately after `FLUSHDB` (expected: wrong — likely showing full inventory):**
+**What I expected** (scratchpad, before running): the page does _not_ show full inventory, because the computed fallback subtracts the 20 active mirror rows (ADR 0002/0004) — the one thing the delivery plan's "likely showing full inventory" did not anticipate this system having; `POST /holds` is a 409 because the counter is gone and the script refuses a missing counter rather than inventing one; the sweeper sweeps nothing because the index is gone; reconcile expires the 20 rows and writes 1000; the next hold works. The 20 customers mid-checkout have lost their holds and nothing can say otherwise.
 
-**Availability after calling `POST /_admin/reconcile/:eventId`:**
+**What actually happened:**
+
+```
+t0              General = 1000   (counter 1000)
+20 holds:       General = 980    (counter 980, hold keys 20, index size 20, active rows 20)
+FLUSHDB
+after FLUSHDB:  General = 980    (counter '', keys 3, active rows 20)
+GET /holds/<first token> -> 404
+POST /holds -> {"error":{"code":"INSUFFICIENT","message":"not enough tickets left in tier 1111…aaaa"}}
+two sweeper ticks later: worker log lines mentioning swept = 0; active rows 20; General = 980
+POST /_admin/reconcile -> {'rowsExpired': 20, 'unrecorded': [], 'General': {'before': None, 'after': 1000}}
+after reconcile:  General = 1000  (counter 1000, active rows 0)
+POST /holds -> 201 remaining 999
+```
+
+**Availability shown immediately after `FLUSHDB` (expected: wrong — likely showing full inventory):** **980 — and it is wrong, in the other direction.** The live counter is gone, so `GET /events/:id` falls back to Postgres: `total − sold − SUM(active rows)` = 1000 − 0 − 20. The number _looks_ right — it is what the page showed a second before the flush — but every one of those 20 holds is gone: `GET /holds/:token` is a 404, the checkout page would say "expired", and nobody can release or confirm them. The rows will stay `active` forever on their own: the sweeper found nothing to sweep (the index went with the flush — `swept = 0` after two ticks) and `ReleaseHold` cannot release a hold the store does not have. So the page under-reports by 20 for good, not for two minutes. And the write path is worse than the page: `POST /holds` is `409 INSUFFICIENT` on a tier the page says has 980, because `create_hold.lua` refuses a tier with no counter rather than seed one (TB-022's `-2`) — correct, and invisible unless you read the warn in the API log. "Redis restarted in production" is not "we show full inventory for a moment"; it is "we sell nothing and show a number that is quietly wrong until an operator notices". The three keys left after the flush are the cache stats and the event cache the first `GET` rewrote.
+
+**Availability after calling `POST /_admin/reconcile/:eventId`:** **1000**, in one call: `rowsExpired: 20`, `before: null`, `after: 1000`, the 20 rows `expired`, the counter back, and the next `POST /holds` a 201 with `remaining: 999`. The report is the audit: what the counter was (nothing), what it is, and what the mirror had wrong. What reconcile cannot do is give those 20 people their holds back — the hashes were the only record of who held what for how long, the rows know the token and the quantity but a hold is a promise with a deadline, and the deadline went with the key. The rehearsal's real finding: the drill is survivable, the numbers come back with one call, and the cost is 20 abandoned checkouts that the system can count but not restore. TB-040's persistence experiments are where "lose nothing" is priced.
 
 **Did the 20 in-flight holds survive reconciliation, or were they lost?** _(they should be — Redis was the only place tracking them as "currently held"; think about whether that's the correct trade-off)_
 
