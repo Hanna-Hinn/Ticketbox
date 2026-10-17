@@ -1,6 +1,6 @@
 # TB-018 — CachedEventRepository decorator
 
-**Status:** Approved
+**Status:** Implemented — see [`docs/tasks/TB-018-cached-event-repository.md`](../tasks/TB-018-cached-event-repository.md) §3 for where reality diverged
 **Date:** 2026-10-17
 **Task:** TB-018 (`docs/02-product-delivery-plan.md`)
 **Branch:** `feat/TB-018-cached-event-repository` (stacked on `feat/TB-017-redis-client-and-keys`)
