@@ -2,25 +2,23 @@ import js from "@eslint/js";
 import tseslint from "typescript-eslint";
 import eslintConfigPrettier from "eslint-config-prettier";
 
-// Non-type-checked TypeScript rules for now (no `projectService`). Type-aware
-// linting needs a settled multi-tsconfig project layout; with domain/,
-// application/, and infrastructure/ still empty (Stage 1+), there's nothing
-// yet for the extra rigor to protect. Worth revisiting once there's real
-// business logic to check — TB-009 already touches this file for the layer
-// boundary rules, so that's a natural point to reconsider.
-//
-// TB-009 reconsidered it and left it: type-aware rules do not enforce import
-// boundaries, which is the only thing that task is about.
+// Non-type-checked TypeScript rules (no `projectService`). Type-aware linting
+// needs a settled multi-tsconfig project layout, and nothing here needs it:
+// the layer boundaries below are about import specifiers, not types.
 
-// The Dependency Rule (handbook §2.3), as lint. Specifiers are matched as
+// The Dependency Rule as lint — handbook "Boundaries (enforced, not
+// aspirational)" and the CLAUDE.md layer table. Specifiers are matched as
 // strings, so relative imports are judged by their text: there are no path
 // aliases and no barrels in this repo, and this is one reason to keep it so.
 const api = "packages/api/src";
 
-function forbid(files, patterns, ignores = []) {
+// A specifier that does not start with "./" or "../": a package or a builtin.
+const anyPackageOrBuiltin = "^(?!\\.\\.?/)";
+
+function forbid(files, patterns, { except = [] } = {}) {
   return {
     files,
-    ignores,
+    ignores: except,
     rules: {
       "no-restricted-imports": ["error", { patterns }],
     },
@@ -28,31 +26,66 @@ function forbid(files, patterns, ignores = []) {
 }
 
 const layerBoundaries = [
-  // L1 imports nothing. Every domain file sits at domain/<kind>/File.ts, so
-  // "./" and "../" stay inside domain/ and "../../" is the way out.
+  // no-restricted-imports does not see dynamic import() or typeof import(),
+  // so neither is allowed anywhere under src/. Wiring is static.
+  {
+    files: [`${api}/**/*.ts`],
+    rules: {
+      "no-restricted-syntax": [
+        "error",
+        {
+          selector: "ImportExpression",
+          message: "No dynamic import(): it bypasses the boundary lint.",
+        },
+        { selector: "TSImportType", message: "No typeof import(): it bypasses the boundary lint." },
+      ],
+    },
+  },
+  // L1 imports nothing. Domain files live at domain/<kind>/File.ts, so "./"
+  // and "../" stay inside domain/ and "../../" is the way out; the named
+  // layers are listed as well so a file at the wrong depth cannot slip past.
   forbid(
     [`${api}/domain/**/*.ts`],
     [
       {
-        regex: "^(?!\\.\\.?/)",
+        regex: anyPackageOrBuiltin,
         message: "domain/ imports nothing outside domain/ — not a package, not a builtin.",
       },
       {
         regex: "^\\.\\./\\.\\./",
+        message: "domain/ files live at domain/<kind>/File.ts; ../../ leaves domain/.",
+      },
+      {
+        group: [
+          "**/application/**",
+          "**/infrastructure/**",
+          "**/presentation/**",
+          "**/main/**",
+          "**/worker/**",
+          "**/test/**",
+        ],
         message: "domain/ imports nothing outside domain/.",
       },
     ],
   ),
-  // L2 imports L1 and L2 only. Never a driver, never an outer layer.
+  // L2 imports L1 and L2 only. Not a driver, not a builtin, not a fake:
+  // if a use case needs a clock or a uuid, that is a port.
   forbid(
     [`${api}/application/**/*.ts`],
     [
       {
-        group: ["ioredis", "ioredis/*", "pg", "pg/*", "fastify", "fastify/*"],
-        message: "application/ never imports a driver. Define a port instead.",
+        regex: anyPackageOrBuiltin,
+        message:
+          "application/ never imports a package or a builtin — not ioredis, pg, fastify, not node:crypto, not zod. Define a port instead.",
       },
       {
-        group: ["**/infrastructure/**", "**/presentation/**", "**/main/**", "**/worker/**"],
+        group: [
+          "**/infrastructure/**",
+          "**/presentation/**",
+          "**/main/**",
+          "**/worker/**",
+          "**/test/**",
+        ],
         message: "application/ imports domain/ and application/ only.",
       },
     ],
@@ -62,7 +95,7 @@ const layerBoundaries = [
     [`${api}/infrastructure/**/*.ts`],
     [
       {
-        group: ["**/presentation/**", "**/main/**", "**/worker/**"],
+        group: ["**/presentation/**", "**/main/**", "**/worker/**", "**/test/**"],
         message: "infrastructure/ imports inward only — never presentation/ or main/.",
       },
     ],
@@ -71,7 +104,7 @@ const layerBoundaries = [
     [`${api}/presentation/**/*.ts`],
     [
       {
-        group: ["**/infrastructure/**", "**/main/**", "**/worker/**"],
+        group: ["**/infrastructure/**", "**/main/**", "**/worker/**", "**/test/**"],
         message: "presentation/ imports inward only — never infrastructure/ or main/.",
       },
     ],
@@ -86,7 +119,7 @@ const layerBoundaries = [
         message: "Only main/composition.ts may import a concrete adapter.",
       },
     ],
-    [`${api}/main/composition.ts`, `${api}/main/migrate.ts`, `${api}/main/seed.ts`],
+    { except: [`${api}/main/composition.ts`, `${api}/main/migrate.ts`, `${api}/main/seed.ts`] },
   ),
 ];
 
