@@ -10,10 +10,15 @@ import { runMigrations } from "../../../src/infrastructure/postgres/migrations.j
 import { PgEventRepository } from "../../../src/infrastructure/postgres/PgEventRepository.js";
 import { seed } from "../../../src/infrastructure/postgres/seed.js";
 import { EventController } from "../../../src/presentation/http/controllers/EventController.js";
+import { GetCacheStatsUseCase } from "../../../src/application/use-cases/GetCacheStats.js";
+import { StatsController } from "../../../src/presentation/http/controllers/StatsController.js";
+import { InMemoryCacheStats } from "../../fakes/InMemoryCacheStats.js";
 import { buildServer } from "../../../src/presentation/http/server.js";
 import { FakeClock } from "../../fakes/FakeClock.js";
 import { InMemoryHoldStore } from "../../fakes/InMemoryHoldStore.js";
 import { connectToTestDatabase, resetSchema } from "../support/database.js";
+
+const unusedStats = new StatsController(new GetCacheStatsUseCase(new InMemoryCacheStats()));
 
 const migrationsDir = fileURLToPath(new URL("../../../../../migrations/", import.meta.url));
 const JAZZ = "11111111-1111-4111-8111-111111111111";
@@ -38,6 +43,7 @@ beforeAll(async () => {
   clock = new FakeClock("2000-01-01T00:00:00.000Z");
   getAvailability = new GetEventAvailabilityUseCase(repo, holds);
   app = buildServer({
+    stats: unusedStats,
     logger: pino({ level: "silent" }),
     events: new EventController(new ListUpcomingEventsUseCase(repo, clock), getAvailability),
     checks: {},

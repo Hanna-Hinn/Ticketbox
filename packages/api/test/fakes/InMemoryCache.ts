@@ -1,15 +1,21 @@
 import type { RedisStatus } from "ioredis";
 import type { CacheClient } from "../../src/infrastructure/redis/CachedEventRepository.js";
 
-// The subset of Redis the cache-aside decorator uses, on a Map. `status`
-// and `failing` are settable so a test can play a reconnecting or a broken
-// client without Docker.
+// The subset of Redis the cache-aside decorator uses, on a Map. `status`,
+// `failing` and `hanging` are settable so a test can play a reconnecting,
+// a broken, or a silent client without Docker.
+export interface CacheEntry {
+  value: string;
+  ttlSeconds?: number;
+  ttlMs?: number;
+}
+
 export class InMemoryCache implements CacheClient {
   status: RedisStatus = "ready";
   failing = false;
   // A command that never settles: the in-flight-when-Redis-died case.
   hanging = false;
-  readonly entries = new Map<string, { value: string; ttlSeconds: number }>();
+  readonly entries = new Map<string, CacheEntry>();
 
   async get(key: string): Promise<string | null> {
     this.failIfBroken();
@@ -17,10 +23,20 @@ export class InMemoryCache implements CacheClient {
     return this.entries.get(key)?.value ?? null;
   }
 
-  async set(key: string, value: string, _token: "EX", seconds: number): Promise<"OK"> {
+  async set(
+    key: string,
+    value: string,
+    token: "EX" | "PX",
+    amount: number,
+    nx?: "NX",
+  ): Promise<"OK" | null> {
     this.failIfBroken();
     if (this.hanging) return never();
-    this.entries.set(key, { value, ttlSeconds: seconds });
+    if (nx === "NX" && this.entries.has(key)) return null;
+    this.entries.set(
+      key,
+      token === "EX" ? { value, ttlSeconds: amount } : { value, ttlMs: amount },
+    );
     return "OK";
   }
 

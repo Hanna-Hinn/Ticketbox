@@ -7,10 +7,15 @@ import { ListUpcomingEventsUseCase } from "../../../src/application/use-cases/Li
 import { InvalidQuantity } from "../../../src/domain/errors/InvalidQuantity.js";
 import { TierNotFound } from "../../../src/domain/errors/TierNotFound.js";
 import { EventController } from "../../../src/presentation/http/controllers/EventController.js";
+import { GetCacheStatsUseCase } from "../../../src/application/use-cases/GetCacheStats.js";
+import { StatsController } from "../../../src/presentation/http/controllers/StatsController.js";
+import { InMemoryCacheStats } from "../../fakes/InMemoryCacheStats.js";
 import { buildServer } from "../../../src/presentation/http/server.js";
 import { FakeClock } from "../../fakes/FakeClock.js";
 import { InMemoryEventRepository } from "../../fakes/InMemoryEventRepository.js";
 import { InMemoryHoldStore } from "../../fakes/InMemoryHoldStore.js";
+
+const unusedStats = new StatsController(new GetCacheStatsUseCase(new InMemoryCacheStats()));
 
 // The single error handler, exercised through throwaway routes that throw
 // what real routes will throw later. The logger writes to memory so the
@@ -28,6 +33,7 @@ let app: FastifyInstance;
 beforeAll(async () => {
   const noEvents = new InMemoryEventRepository([]);
   app = buildServer({
+    stats: unusedStats,
     logger: pino({ level: "info" }, sink),
     events: new EventController(
       new ListUpcomingEventsUseCase(noEvents, new FakeClock("2026-01-01T00:00:00.000Z")),

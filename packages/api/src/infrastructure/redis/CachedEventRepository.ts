@@ -8,12 +8,14 @@ import { eventId, tierId, type EventId } from "../../domain/value-objects/Ids.js
 import { Money } from "../../domain/value-objects/Money.js";
 import { describeRedisError } from "./client.js";
 import { keys } from "./keys.js";
+import type { CacheStatsRecorder } from "./RedisCacheStats.js";
+import { within } from "./within.js";
 
 // Cache-aside in front of another EventRepository (ADR 0003): a miss reads
 // through and writes the event back with a TTL; a hit never touches
 // Postgres. Nothing above L3 can tell — the same port in, the same port out.
 //
-// Two rules keep this a cache and not a liability:
+// Three rules keep this a cache and not a liability:
 // - What comes back from Redis is untrusted input (another version of this
 //   code, a hand edit, a spike). It is parsed through a schema strict enough
 //   that a payload it accepts cannot fail the domain constructors; anything
@@ -21,17 +23,26 @@ import { keys } from "./keys.js";
 // - A dead Redis must not slow a read down. With the offline queue on
 //   (TB-017), a GET issued while the client is reconnecting waits, so when
 //   the client is not "ready" the cache is skipped. That guard cannot see a
-//   command already on the wire when the socket dies: ioredis re-sends it
-//   after the reconnect (autoResendUnfulfilledCommands, default on) and
-//   rejects it only after maxRetriesPerRequest attempts, ~74 s with TB-017's
-//   defaults. So every cache command also runs under a deadline, and a
-//   command that fails or exceeds it is a miss. The dangling command settles
-//   on its own later; nothing here waits for it.
+//   command already on the wire when the socket dies (see within.ts), so
+//   every cache command also runs under a deadline, and a command that
+//   fails or exceeds it is a miss.
+// - A cold key under load is one Postgres read, not fifty (TB-019): the
+//   first miss wins a short NX mutex and refreshes; the others poll the key
+//   and take its answer. "Not found" is cached too, briefly, so an unknown
+//   id is not a Postgres read every time.
 
 export const CACHE_TTL_SECONDS = 300;
+export const NEGATIVE_TTL_SECONDS = 30;
 // A healthy local GET is ~1 ms and the fallback (Postgres, indexed) ~23 ms;
 // a cache read that takes longer than the fallback has stopped being one.
 export const CACHE_COMMAND_DEADLINE_MS = 100;
+// How long a refresh may take before the mutex expires, and how long a
+// loser waits for the winner's answer before reading through itself.
+export const REFRESH_MUTEX_MS = 1_000;
+export const REFRESH_POLL_MS = 10;
+// The JSON literal `null`: the schema can never accept it as an event, so
+// it cannot be confused with one.
+export const NEGATIVE_SENTINEL = "null";
 
 // The subset of ioredis the decorator uses, so a unit test can fake it with
 // a Map. Structural; the real client satisfies it unchanged.
@@ -39,6 +50,13 @@ export interface CacheClient {
   readonly status: RedisStatus;
   get(key: string): Promise<string | null>;
   set(key: string, value: string, secondsToken: "EX", seconds: number): Promise<unknown>;
+  set(
+    key: string,
+    value: string,
+    millisecondsToken: "PX",
+    milliseconds: number,
+    nx: "NX",
+  ): Promise<"OK" | null>;
   del(key: string): Promise<unknown>;
 }
 
@@ -67,22 +85,46 @@ const CachedEvent = z
 
 type CachedEventJson = z.infer<typeof CachedEvent>;
 
+// What one GET told us: an answer (an event, or a cached "not found"), no
+// entry, or a cache that could not be asked.
+type Lookup = { kind: "hit"; event: Event | null } | { kind: "miss" } | { kind: "unavailable" };
+
 export class CachedEventRepository implements EventRepository {
   constructor(
     private readonly inner: EventRepository,
     private readonly cache: CacheClient,
+    private readonly stats: CacheStatsRecorder,
     private readonly log: Logger,
   ) {}
 
   async findById(id: EventId): Promise<Event | null> {
+    if (this.cache.status !== "ready") return this.inner.findById(id);
     const key = keys.eventCache(id);
-    const cached = await this.read(key);
-    if (cached !== null) return cached;
 
-    const event = await this.inner.findById(id);
-    // A null is not cached: negative caching is TB-019, with its own TTL.
-    if (event !== null) await this.write(key, event);
-    return event;
+    const first = await this.lookup(key);
+    if (first.kind === "hit") {
+      this.stats.recordHit();
+      return first.event;
+    }
+    this.stats.recordMiss();
+    if (first.kind === "unavailable") return this.inner.findById(id);
+
+    switch (await this.tryToWinRefresh(id)) {
+      case "won": {
+        const event = await this.inner.findById(id);
+        await this.write(key, event);
+        return event;
+      }
+      case "lost": {
+        const answer = await this.waitForRefresh(key);
+        if (answer.kind === "hit") return answer.event;
+        // The winner died or the cache went away: read through, cache
+        // nothing — the winner's SET may still land.
+        return this.inner.findById(id);
+      }
+      case "unavailable":
+        return this.inner.findById(id);
+    }
   }
 
   // A query over time: its answer changes with the clock, so it is not
@@ -103,30 +145,60 @@ export class CachedEventRepository implements EventRepository {
     await within(this.cache.del(keys.eventCache(id)), CACHE_COMMAND_DEADLINE_MS);
   }
 
-  private async read(key: string): Promise<Event | null> {
-    if (this.cache.status !== "ready") return null;
+  private async lookup(key: string): Promise<Lookup> {
     let raw: string | null;
     try {
       raw = await within(this.cache.get(key), CACHE_COMMAND_DEADLINE_MS);
     } catch (err: unknown) {
       this.log.warn({ err: describe(err), key }, "cache read failed; reading through");
-      return null;
+      return { kind: "unavailable" };
     }
-    if (raw === null) return null;
-    return this.parse(raw, key);
+    if (raw === null) return { kind: "miss" };
+    if (raw === NEGATIVE_SENTINEL) return { kind: "hit", event: null };
+    const event = this.parse(raw, key);
+    return event === null ? { kind: "miss" } : { kind: "hit", event };
   }
 
-  private async write(key: string, event: Event): Promise<void> {
+  // SET NX PX: exactly one concurrent miss gets "OK". The mutex is never
+  // released — it expires. Compare-and-delete (a DEL can release someone
+  // else's lock) is TB-031's lesson; until then a caller that finds the key
+  // missing within REFRESH_MUTEX_MS of a refresh polls instead of winning.
+  private async tryToWinRefresh(id: EventId): Promise<"won" | "lost" | "unavailable"> {
+    try {
+      const reply = await within(
+        this.cache.set(keys.eventRefresh(id), "1", "PX", REFRESH_MUTEX_MS, "NX"),
+        CACHE_COMMAND_DEADLINE_MS,
+      );
+      return reply === "OK" ? "won" : "lost";
+    } catch (err: unknown) {
+      this.log.warn({ err: describe(err) }, "refresh mutex unavailable; reading through");
+      return "unavailable";
+    }
+  }
+
+  // A loser polls the cache key, not the mutex: the winner's SET is what it
+  // is waiting for. The budget is the mutex's lifetime, so a dead winner
+  // costs at most that before the loser reads through itself.
+  private async waitForRefresh(key: string): Promise<Lookup> {
+    const deadline = Date.now() + REFRESH_MUTEX_MS;
+    while (Date.now() < deadline) {
+      await new Promise((resolve) => setTimeout(resolve, REFRESH_POLL_MS));
+      const answer = await this.lookup(key);
+      if (answer.kind !== "miss") return answer;
+    }
+    return { kind: "miss" };
+  }
+
+  private async write(key: string, event: Event | null): Promise<void> {
     // Not "harmless to skip": an awaited SET during a reconnect would hold
     // the response until Redis returns.
     if (this.cache.status !== "ready") return;
+    const value = event === null ? NEGATIVE_SENTINEL : JSON.stringify(toJson(event));
+    const ttl = event === null ? NEGATIVE_TTL_SECONDS : CACHE_TTL_SECONDS;
     try {
       // Always with EX: a plain SET on an existing key clears its TTL and
       // makes it immortal (handbook §7.1).
-      await within(
-        this.cache.set(key, JSON.stringify(toJson(event)), "EX", CACHE_TTL_SECONDS),
-        CACHE_COMMAND_DEADLINE_MS,
-      );
+      await within(this.cache.set(key, value, "EX", ttl), CACHE_COMMAND_DEADLINE_MS);
     } catch (err: unknown) {
       this.log.warn({ err: describe(err), key }, "cache write failed; serving uncached");
     }
@@ -194,16 +266,4 @@ function describe(err: unknown): ReturnType<typeof describeRedisError> {
   return err instanceof Error
     ? describeRedisError(err)
     : { name: "unknown", message: String(err), stack: undefined };
-}
-
-async function within<T>(command: Promise<T>, ms: number): Promise<T> {
-  let timer: NodeJS.Timeout | undefined;
-  const deadline = new Promise<never>((_, reject) => {
-    timer = setTimeout(() => reject(new Error(`cache command exceeded ${ms}ms`)), ms);
-  });
-  try {
-    return await Promise.race([command, deadline]);
-  } finally {
-    clearTimeout(timer);
-  }
 }
