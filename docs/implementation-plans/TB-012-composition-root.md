@@ -1,6 +1,6 @@
 # TB-012 — Composition root and error mapping
 
-**Status:** Approved
+**Status:** Implemented — see [`docs/tasks/TB-012-composition-root.md`](../tasks/TB-012-composition-root.md); the Phase 3 review found the handler turning Fastify's own 4xx errors into 500s (decisions 8–11)
 **Date:** 2026-10-17
 **Task:** TB-012 (`docs/02-product-delivery-plan.md`)
 **Branch:** `feat/TB-012-composition-root` (stacked on `feat/TB-011-http-layer`)
