@@ -178,7 +178,7 @@ Ask "and what if it _hangs_?" alongside "what if it's _down_?" — the plan answ
 ## 8. Follow-ups left behind
 
 - [x] TB-027: reconciliation rebuilds the counter from `total − sold − active rows`; it must also expire rows whose hold is gone (ADR 0004 row 2, now produced by every `unmarked` entry), and decide whether it clears or rebuilds the index too (ADR 0005's revisit line). _Done; it trusts the index and does not rebuild it (ADR 0006)._
-- [ ] TB-038: E2E-3 — the timer runs out in the browser and the number comes back; needs the worker in the E2E stack and a short `HOLD_TTL_MS`.
+- [x] TB-028a: E2E-3 — the timer runs out in the browser and the number comes back; needs the worker in the E2E stack and a short `HOLD_TTL_MS`. _Done; CI runs the worker with an 8 s TTL on the API._
 - [ ] TB-040: evict the index under `allkeys-lru` and watch the counters stay low; `keys.tierHoldsPattern()` is now the registry's first pattern.
-- [ ] The sweeper does not run in CI; nothing there needs it until E2E-3.
+- [x] The sweeper does not run in CI; nothing there needs it until E2E-3. _It does now (TB-028a), PID-checked after the health gate._
 - [ ] `worker/sweeper.ts` composes the Fastify app it never listens on; harmless, and the price of one composition root.

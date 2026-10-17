@@ -1,6 +1,6 @@
 # TB-028a — E2E: the expiry journey
 
-**Status:** Approved
+**Status:** Implemented — see [`docs/tasks/TB-028a-e2e-expiry-journey.md`](../tasks/TB-028a-e2e-expiry-journey.md)
 **Date:** 2026-10-17
 **Task:** TB-028a (`docs/02-product-delivery-plan.md`)
 **Branch:** `feat/TB-028a-e2e-expiry-journey` (stacked on `spike/TB-028-keyspace-notifications-flushdb`, which is stacked on `feat/TB-027-reconciliation-endpoint`; the task needs TB-026)
@@ -130,6 +130,13 @@ None blocking. Decision 1's number (8 s) is the one to argue; decision 2 is why 
 ## 9. Documentation this task will produce
 
 - ☐ ADR — none; no decision beyond a CI line
-- ☐ Task doc — `docs/tasks/TB-028a-e2e-expiry-journey.md`
+- ☑ Task doc — `docs/tasks/TB-028a-e2e-expiry-journey.md`
 - ☐ Benchmark entry — nothing measurable changed
 - ☐ NOTES entry — not a SPIKE task
+
+---
+
+## 10. Amendments after implementation
+
+- **§5** no longer claims the journey catches an immortal hash; **decision 4** gained the countdown bound and the release-reply assertion; **decision 5** gained the PID check; **§6** gained the slow-runner failure mode — all in review and marked in place above.
+- **Phase 4:** nine sabotage runs, two of them deliberately green (the request-fixture DELETE, the stripped hash TTL) and recorded as the spec's limits; the first batch stopped its own shell (`pgrep -f`).
