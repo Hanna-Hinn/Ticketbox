@@ -1,11 +1,7 @@
 import type { Redis } from "ioredis";
 import type { Logger } from "pino";
-import type {
-  ExpiredHold,
-  HeldEntry,
-  HoldStore,
-  SweepResult,
-} from "../../application/ports/HoldStore.js";
+import type { ExpiredHold, HoldStore, SweepResult } from "../../application/ports/HoldStore.js";
+import type { HeldEntry, InventoryRepair } from "../../application/ports/InventoryRepair.js";
 import { Hold } from "../../domain/entities/Hold.js";
 import type { HoldToken } from "../../domain/value-objects/HoldToken.js";
 import { eventId, tierId, type TierId } from "../../domain/value-objects/Ids.js";
@@ -40,7 +36,7 @@ const HOLD_COMMAND_DEADLINE_MS = 1_000;
 // hold's own TTL, a sorted set per tier for the sweeper. Writes fail closed
 // (a store that cannot be reached is an error, never "insufficient");
 // reads fail open to the computed count (ADR 0002).
-export class RedisHoldStore implements HoldStore {
+export class RedisHoldStore implements HoldStore, InventoryRepair {
   constructor(
     private readonly redis: Redis,
     private readonly log: Logger,
@@ -262,22 +258,18 @@ export class RedisHoldStore implements HoldStore {
 
   async held(tierId: TierId): Promise<readonly HeldEntry[]> {
     this.requireReady("list held");
-    const raw = await within(
-      this.redis.zrange(keys.tierHolds(tierId), "0", "-1", "WITHSCORES"),
+    const members = await within(
+      this.redis.zrange(keys.tierHolds(tierId), "0", "-1"),
       HOLD_COMMAND_DEADLINE_MS,
       "held",
     );
     const entries: HeldEntry[] = [];
-    // WITHSCORES interleaves: member, score, member, score …
-    for (let i = 0; i + 1 < raw.length; i += 2) {
-      const member = raw[i];
-      const score = raw[i + 1];
-      if (member === undefined || score === undefined) break;
+    for (const member of members) {
       const decoded = decodeMember(member);
       // An entry this version did not write is the sweeper's to remove on
       // its next pass; one cleaner per mess.
       if (decoded === null) continue;
-      entries.push({ token: decoded.token, qty: decoded.qty, expiresAt: new Date(Number(score)) });
+      entries.push({ token: decoded.token, qty: decoded.qty });
     }
     return entries;
   }
@@ -297,14 +289,18 @@ export class RedisHoldStore implements HoldStore {
       HOLD_COMMAND_DEADLINE_MS,
       "rebuild",
     );
-    // exec() answers null only when a WATCHed key changed; nothing is watched.
-    const first = replies?.[0];
-    if (first === undefined) throw new Error(`rebuild of ${tierId}: transaction returned nothing`);
-    const [err, previous] = first;
-    if (err) throw err;
-    if (previous === null || previous === undefined) return { before: null };
+    // exec() answers null only when a WATCHed key changed; nothing is
+    // watched. Each reply is [error, value]; a transaction is isolated, not
+    // rolled back, so the HSET's reply is checked as well as the HGET's.
+    if (replies === null) throw new Error(`rebuild of ${tierId}: transaction aborted`);
+    const failed = replies.find(([err]) => err !== null)?.[0];
+    if (failed) throw failed;
+    const previous = replies[0]?.[1];
+    if (typeof previous !== "string") return { before: null };
     const before = Number(previous);
-    return { before: Number.isFinite(before) ? before : null };
+    // A counter that is not an integer is a hand edit; report it as absent
+    // rather than hand the DTO a 3.5.
+    return { before: Number.isInteger(before) ? before : null };
   }
 
   // A write against a client that is not connected would sit in ioredis's

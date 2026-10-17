@@ -48,9 +48,9 @@ export function compose(config: Config): System {
   // EventRepository: Postgres computes, Redis remembers the answer for 300 s
   // (TB-018). Only this line knows there is a cache.
   const cacheStats = new RedisCacheStats(redis, log.child({ component: "cache-stats" }));
-  const truth = new PgEventRepository(pool);
+  const pgEvents = new PgEventRepository(pool);
   const events = new CachedEventRepository(
-    truth,
+    pgEvents,
     redis,
     cacheStats, // CacheStatsRecorder
     log.child({ component: "event-cache" }),
@@ -79,9 +79,9 @@ export function compose(config: Config): System {
   const getHold = new GetHoldUseCase(holds, clock);
   const releaseHold = new ReleaseHoldUseCase(holds, holdMirror);
   const sweeper = new ReleaseExpiredHoldsUseCase(holds, holdMirror, clock);
-  // Reconcile reads the truth, never the cache: a five-minute-old computed
+  // Reconcile reads Postgres, never the cache: a five-minute-old computed
   // count written over the live counter would be reconciliation in reverse.
-  const reconcile = new ReconcileEventUseCase(truth, holds, holdMirror);
+  const reconcile = new ReconcileEventUseCase(pgEvents, holds, holdMirror); // InventoryRepair
 
   // HTTP
   const controller = new EventController(listUpcoming, getAvailability);

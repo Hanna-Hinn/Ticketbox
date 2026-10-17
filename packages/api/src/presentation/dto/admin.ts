@@ -3,7 +3,8 @@ import { z } from "zod";
 export const ReconcileParams = z.object({ eventId: z.uuid() });
 
 // The report: what each counter was and is now (drift is the reader's
-// subtraction), and what the mirror had wrong on either side.
+// subtraction), the rows of holds that were gone, and the holds the rows
+// never knew about (counted, not recorded).
 export const ReconcileResponse = z.object({
   eventId: z.uuid(),
   tiers: z.array(
@@ -14,7 +15,6 @@ export const ReconcileResponse = z.object({
     }),
   ),
   rowsExpired: z.int().nonnegative(),
-  rowsRecorded: z.int().nonnegative(),
   unrecorded: z.array(z.string()),
 });
 

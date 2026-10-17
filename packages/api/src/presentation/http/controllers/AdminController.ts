@@ -17,7 +17,6 @@ export class AdminController {
         after: tier.after,
       })),
       rowsExpired: result.rowsExpired,
-      rowsRecorded: result.rowsRecorded,
       unrecorded: [...result.unrecorded],
     };
   }

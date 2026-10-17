@@ -18,14 +18,6 @@ export interface ExpiredHold {
   readonly qty: number;
 }
 
-// An entry of the index as reconciliation reads it (TB-027): what the store
-// still counts as held, expired-but-unswept included.
-export interface HeldEntry {
-  readonly token: HoldToken;
-  readonly qty: number;
-  readonly expiresAt: Date;
-}
-
 // swept: false — someone else already did (a late release, another sweeper);
 // restored: false — the tier has no counter to restore into (evicted): the
 // entry is removed and nothing is added back, reconciliation rebuilds it.
@@ -67,10 +59,4 @@ export interface HoldStore {
 
   /** Restore an expired hold's quantity exactly once (TB-026). */
   sweep(hold: ExpiredHold, now: Date): Promise<SweepResult>;
-
-  /** Every hold the index still counts as held for the tier (TB-027). */
-  held(tierId: TierId): Promise<readonly HeldEntry[]>;
-
-  /** Overwrite the live counter; answers the value it replaced, null if there was none (TB-027). */
-  rebuild(tierId: TierId, remaining: number): Promise<{ before: number | null }>;
 }
