@@ -1,5 +1,5 @@
 import type { HoldToken } from "../../domain/value-objects/HoldToken.js";
-import type { TierId } from "../../domain/value-objects/Ids.js";
+import type { EventId, TierId } from "../../domain/value-objects/Ids.js";
 import type { Clock } from "../ports/Clock.js";
 import type { HoldStore } from "../ports/HoldStore.js";
 
@@ -11,6 +11,7 @@ export type GetHoldOutput =
   | {
       ok: true;
       token: HoldToken;
+      eventId: EventId;
       tierId: TierId;
       qty: number;
       expiresAt: Date;
@@ -37,6 +38,7 @@ export class GetHoldUseCase {
     return {
       ok: true,
       token: hold.token,
+      eventId: hold.eventId,
       tierId: hold.tierId,
       qty: hold.qty.value,
       expiresAt: hold.expiresAt,

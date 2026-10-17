@@ -1,38 +1,8 @@
 import type { FastifyInstance } from "fastify";
 import pino from "pino";
 import { afterEach, describe, expect, it } from "vitest";
-import { GetEventAvailabilityUseCase } from "../../../src/application/use-cases/GetEventAvailability.js";
-import { ListUpcomingEventsUseCase } from "../../../src/application/use-cases/ListUpcomingEvents.js";
-import { EventController } from "../../../src/presentation/http/controllers/EventController.js";
-import { GetCacheStatsUseCase } from "../../../src/application/use-cases/GetCacheStats.js";
-import { StatsController } from "../../../src/presentation/http/controllers/StatsController.js";
-import { ReleaseHoldUseCase } from "../../../src/application/use-cases/ReleaseHold.js";
-import { HoldController } from "../../../src/presentation/http/controllers/HoldController.js";
-import { InMemoryCacheStats } from "../../fakes/InMemoryCacheStats.js";
+import { unusedEventController, unusedHoldController, unusedStatsController } from "./support.js";
 import { buildServer, type ServerDeps } from "../../../src/presentation/http/server.js";
-import { FakeClock } from "../../fakes/FakeClock.js";
-import { InMemoryEventRepository } from "../../fakes/InMemoryEventRepository.js";
-import { InMemoryHoldRepository } from "../../fakes/InMemoryHoldRepository.js";
-import { InMemoryHoldStore } from "../../fakes/InMemoryHoldStore.js";
-
-const unusedStats = new StatsController(new GetCacheStatsUseCase(new InMemoryCacheStats()));
-const unusedHolds = new HoldController(
-  new ReleaseHoldUseCase(
-    new InMemoryHoldStore(new FakeClock("2026-01-01T00:00:00.000Z")),
-    new InMemoryHoldRepository(),
-  ),
-);
-
-// The event controller is irrelevant here; an empty in-memory world keeps the
-// server buildable without a database.
-const noEvents = new InMemoryEventRepository([]);
-const unusedEvents = new EventController(
-  new ListUpcomingEventsUseCase(noEvents, new FakeClock("2026-01-01T00:00:00.000Z")),
-  new GetEventAvailabilityUseCase(
-    noEvents,
-    new InMemoryHoldStore(new FakeClock("2026-01-01T00:00:00.000Z")),
-  ),
-);
 
 const ok = (): Promise<void> => Promise.resolve();
 const down = (): Promise<void> => Promise.reject(new Error("connection refused"));
@@ -42,10 +12,10 @@ let app: FastifyInstance;
 
 function serverWith(checks: ServerDeps["checks"]): FastifyInstance {
   app = buildServer({
-    stats: unusedStats,
-    holds: unusedHolds,
+    stats: unusedStatsController(),
+    holds: unusedHoldController(),
     logger: pino({ level: "silent" }),
-    events: unusedEvents,
+    events: unusedEventController(),
     checks,
     healthCheckTimeoutMs: 50,
   });

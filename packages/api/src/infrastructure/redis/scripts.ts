@@ -26,6 +26,7 @@ declare module "ioredis" {
       createdAtMs: number,
       expiresAtMs: number,
       ttlMs: number,
+      eventId: string,
     ): Result<number, Context>;
     releaseHold(
       holdKey: string,

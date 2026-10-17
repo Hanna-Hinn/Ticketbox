@@ -81,6 +81,7 @@ class EventBuilder {
 
 class HoldBuilder {
   private token = "tok-1";
+  private event: EventId = DEFAULT_EVENT_ID;
   private tier = "11111111-1111-4111-8111-aaaaaaaaaaaa";
   private qty = 2;
   private created = new Date("2026-01-01T10:00:00.000Z");
@@ -88,6 +89,11 @@ class HoldBuilder {
 
   withToken(token: string): this {
     this.token = token;
+    return this;
+  }
+
+  forEvent(id: string): this {
+    this.event = eventId(id);
     return this;
   }
 
@@ -114,6 +120,7 @@ class HoldBuilder {
   build(): Hold {
     return Hold.create({
       token: holdToken(this.token),
+      eventId: this.event,
       tierId: tierId(this.tier),
       qty: Quantity.of(this.qty),
       now: this.created,

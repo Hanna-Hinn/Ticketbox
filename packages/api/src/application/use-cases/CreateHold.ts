@@ -15,7 +15,15 @@ export interface CreateHoldInput {
 }
 
 export type CreateHoldOutput =
-  | { ok: true; token: HoldToken; expiresAt: Date; remaining: number }
+  | {
+      ok: true;
+      token: HoldToken;
+      eventId: EventId;
+      tierId: TierId;
+      qty: number;
+      expiresAt: Date;
+      remaining: number;
+    }
   | { ok: false; reason: "unknown-event" | "unknown-tier" | "insufficient" };
 
 // The sequence, and nothing about how any step is done: this class never
@@ -46,7 +54,14 @@ export class CreateHoldUseCase {
     // Build the entity before touching the store: Hold.create is where ttlMs
     // and the clock reading are validated, and a reserve followed by a throw
     // is inventory nobody can release.
-    const hold = Hold.create({ token, tierId: tier.id, qty, now, ttlMs: this.holdTtlMs });
+    const hold = Hold.create({
+      token,
+      eventId: event.id,
+      tierId: tier.id,
+      qty,
+      now,
+      ttlMs: this.holdTtlMs,
+    });
 
     // The only place the decision is made. No pre-check against
     // tier.remaining: that is a snapshot, and two answers to one question
@@ -68,6 +83,14 @@ export class CreateHoldUseCase {
       throw err;
     }
 
-    return { ok: true, token, expiresAt: hold.expiresAt, remaining: reserved.remaining };
+    return {
+      ok: true,
+      token,
+      eventId: event.id,
+      tierId: tier.id,
+      qty: qty.value,
+      expiresAt: hold.expiresAt,
+      remaining: reserved.remaining,
+    };
   }
 }

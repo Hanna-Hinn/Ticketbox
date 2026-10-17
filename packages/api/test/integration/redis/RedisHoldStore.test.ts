@@ -56,6 +56,7 @@ describe("RedisHoldStore.reserve (create_hold.lua)", () => {
     expect(await redis.hget(keys.tier(TIER), "remaining")).toBe("8");
     expect(await redis.hgetall(keys.hold(hold.token))).toEqual({
       tierId: TIER,
+      eventId: hold.eventId,
       qty: "2",
       createdAt: String(hold.createdAt.getTime()),
       expiresAt: String(hold.expiresAt.getTime()),
@@ -210,6 +211,7 @@ describe("RedisHoldStore.find", () => {
     const found = await store.find(written.token);
 
     expect(found?.token).toBe(written.token);
+    expect(found?.eventId).toBe(written.eventId);
     expect(found?.tierId).toBe(TIER);
     expect(found?.qty.value).toBe(3);
     expect(found?.createdAt).toEqual(written.createdAt);

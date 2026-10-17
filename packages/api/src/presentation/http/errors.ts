@@ -2,6 +2,9 @@ import type { FastifyInstance } from "fastify";
 import { hasZodFastifySchemaValidationErrors } from "fastify-type-provider-zod";
 import { DomainError } from "../../domain/errors/DomainError.js";
 import { EventNotFound } from "../../domain/errors/EventNotFound.js";
+import { HoldNotFound } from "../../domain/errors/HoldNotFound.js";
+import { InsufficientInventory } from "../../domain/errors/InsufficientInventory.js";
+import { InvalidQuantity } from "../../domain/errors/InvalidQuantity.js";
 import { TierNotFound } from "../../domain/errors/TierNotFound.js";
 import type { ErrorDto } from "../dto/errors.js";
 
@@ -16,6 +19,12 @@ const STATUS_OF: ReadonlyMap<unknown, { status: number; code: string }> = new Ma
 >([
   [EventNotFound, { status: 404, code: "NOT_FOUND" }],
   [TierNotFound, { status: 404, code: "NOT_FOUND" }],
+  [HoldNotFound, { status: 404, code: "NOT_FOUND" }],
+  // The entity owns the quantity bound (TB-008 decision 9); a client value
+  // outside it is the client's fault, the same 400 a schema failure gets.
+  [InvalidQuantity, { status: 400, code: "VALIDATION" }],
+  // 409: the request was well-formed and the tier exists; the state refused it.
+  [InsufficientInventory, { status: 409, code: "INSUFFICIENT" }],
 ]);
 
 function envelope(code: string, message: string): ErrorDto {

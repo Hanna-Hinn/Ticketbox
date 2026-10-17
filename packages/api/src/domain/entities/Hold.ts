@@ -1,10 +1,11 @@
 import { InvalidHold } from "../errors/InvalidHold.js";
 import type { HoldToken } from "../value-objects/HoldToken.js";
-import type { TierId } from "../value-objects/Ids.js";
+import type { EventId, TierId } from "../value-objects/Ids.js";
 import type { Quantity } from "../value-objects/Quantity.js";
 
 export interface CreateHoldProps {
   readonly token: HoldToken;
+  readonly eventId: EventId;
   readonly tierId: TierId;
   readonly qty: Quantity;
   readonly now: Date;
@@ -21,6 +22,9 @@ export interface CreateHoldProps {
 export class Hold {
   private constructor(
     readonly token: HoldToken,
+    // The event the tier belongs to: the checkout page is reached by token
+    // alone and must find its way back to the event (TB-025).
+    readonly eventId: EventId,
     readonly tierId: TierId,
     readonly qty: Quantity,
     private readonly createdAtMs: number,
@@ -38,7 +42,7 @@ export class Hold {
     if (Number.isNaN(new Date(expiresAtMs).getTime())) {
       throw new InvalidHold(`expiry ${expiresAtMs} is outside the representable date range`);
     }
-    return new Hold(props.token, props.tierId, props.qty, createdAtMs, expiresAtMs);
+    return new Hold(props.token, props.eventId, props.tierId, props.qty, createdAtMs, expiresAtMs);
   }
 
   get createdAt(): Date {
