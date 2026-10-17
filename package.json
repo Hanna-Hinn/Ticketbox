@@ -16,6 +16,7 @@
     "dev:api": "pnpm --filter @ticketbox/api dev",
     "test:unit": "pnpm -r --if-present run test:unit",
     "test:integration": "pnpm -r --if-present run test:integration",
+    "test:smoke": "pnpm --filter @ticketbox/api test:smoke",
     "prepare": "husky"
   },
   "devDependencies": {
