@@ -1,6 +1,6 @@
 # TB-010 — PgEventRepository
 
-**Status:** Approved
+**Status:** Implemented — see [`docs/tasks/TB-010-pg-event-repository.md`](../tasks/TB-010-pg-event-repository.md); §6's "Postgres down" answer was wrong and is corrected below
 **Date:** 2026-10-17
 **Task:** TB-010 (`docs/02-product-delivery-plan.md`)
 **Branch:** `feat/TB-010-pg-event-repository` (stacked on `feat/TB-009-boundary-enforcement`)
@@ -68,7 +68,8 @@ No index beyond the primary keys — the two correlated subqueries are sequentia
 5. **The constructor takes `pg.Pool | pg.ClientBase`.** Both have `query`. A pool is what the composition root passes; a `ClientBase` (a `Client` or a `PoolClient`) is what lets an integration test wrap each case in `BEGIN … ROLLBACK` on one connection — the handbook's isolation rule — and what TB-029 will need to run the repository inside a transaction. The port's public surface (return types) carries no `pg` type; the constructor parameter is the adapter's own business, which is what "no `pg` type escapes the file" is about.
 6. **`listUpcoming` computes availability for every tier of every upcoming event.** TB-007 decision 9 asked this task to confront the cost. Confronted: three seeded events, nine tiers, two subqueries each. It is the query TB-013 benchmarks, so a lighter list shape would remove the thing being measured. Revisit only if TB-013's numbers say so.
 7. **`pool.ts` is three lines**: `createPool(connectionString)`. It exists because the Scope line says "`pg` Pool" and the handbook's folder listing names it; TB-012 calls it. No pool-size tuning, no lifecycle hooks — nothing asked for them.
-8. **Test isolation is `BEGIN` in `beforeEach`, `ROLLBACK` in `afterEach`, on one `Client`, after one migrate + seed in `beforeAll`.** Exactly the handbook §4.1 rule, made possible by decision 5. Tests that need holds and orders insert them inside the transaction with plain SQL; no `HoldRepository` exists yet (TB-024) and reaching for one here would be the wrong dependency.
+8. **`ORDER BY t.event_id, t.price_cents, t.id`** _(review)_: two tiers at one price had no defined order, and `Event.tiers` is a frozen array the UI renders and tests assert on.
+9. **Test isolation is `BEGIN` in `beforeEach`, `ROLLBACK` in `afterEach`, on one `Client`, after one migrate + seed in `beforeAll`.** Exactly the handbook §4.1 rule, made possible by decision 5. Tests that need holds and orders insert them inside the transaction with plain SQL; no `HoldRepository` exists yet (TB-024) and reaching for one here would be the wrong dependency.
 
 ### New or changed ports / Redis keys / Lua scripts / migrations
 
@@ -111,7 +112,7 @@ All **integration**, real Postgres 16, `ticketbox_test`, one transaction per tes
 - **What if a key is evicted under `allkeys-lru`?** N/A.
 - **What if this operation runs twice?** Read-only; idempotent by nature.
 - **What if it dies halfway through?** Two selects with no write between them; a failure between them surfaces as a thrown `pg` error (a bug, not a value) and nothing is half-done.
-- **What if Postgres is down?** `pool.query` rejects; the error propagates to TB-012's error handler as a 500. Correct: a dead database is not an expected outcome of "find an event".
+- **What if Postgres is down?** An in-flight `query` rejects and the error propagates to TB-012's error handler as a 500 — correct, a dead database is not an expected outcome of "find an event". **But** _(corrected after the Phase 3 review)_: an _idle_ pooled client whose connection drops makes the `Pool` emit `'error'`, and an unhandled `'error'` event on a Node `EventEmitter` terminates the process. Until TB-012's composition root attaches `pool.on("error", …)` with the logger, "Postgres down" is a crash, not a 500. Not fixed here — the listener needs the logger TB-012 introduces, and a stub would be the wrong dependency in the wrong task. Recorded for TB-012's plan.
 
 ---
 
