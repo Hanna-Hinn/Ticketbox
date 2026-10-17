@@ -1,6 +1,6 @@
 # TB-022 — Lua-backed RedisHoldStore
 
-**Status:** Approved
+**Status:** Implemented — see [`docs/tasks/TB-022-lua-create-hold.md`](../tasks/TB-022-lua-create-hold.md) §3 for where reality diverged
 **Date:** 2026-10-17
 **Task:** TB-022 (`docs/02-product-delivery-plan.md`)
 **Branch:** `feat/TB-022-lua-create-hold` (stacked on `spike/TB-021-prove-the-race`, docs-only, which sits on `feat/TB-020-hold-use-cases`)
@@ -180,3 +180,13 @@ None blocking for this task. Two for the next ones:
 - ☑ Task doc — `docs/tasks/TB-022-lua-create-hold.md`
 - ☑ Benchmark entry — `docs/BENCHMARKS.md` §7, the Lua row
 - ☐ NOTES entry — not a SPIKE task
+
+---
+
+## 10. Amendments after implementation
+
+- **§6 "runs twice"** was wrong and is rewritten above: the transport re-sends an in-flight command, the reviewer proved the double decrement, the script is now idempotent per token.
+- **Decision 6** promised a deadline on a hung client that the first commit did not deliver; `reserve` and `find` now run under 1 s, `within` names the command.
+- **Decision 10** named an ADR 0004 that already existed as ADR 0001; it was dated and completed instead.
+- **§4:** `HoldLifecycle.test.ts` was listed and needed no change (it reaches `reserve` through the use cases only).
+- **§5:** the EVALSHA test needed `SCRIPT FLUSH` in Arrange to be able to fail; three tests were added on the review's findings (replay, hung client, non-numeric counter).

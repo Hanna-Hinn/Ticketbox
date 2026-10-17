@@ -157,7 +157,7 @@ Read the driver's reconnect path before writing "the in-flight command rejects".
 
 - [ ] **TB-019:** single-flight on a cold key; negative caching of `null` for 30 s; hit/miss counters and `/_stats`; the "cached" row in BENCHMARKS §2 against the **indexed** baseline (23.1 ms / 311 req/s / mean 159.6 ms).
 - [ ] **TB-019a (spike):** comment out the `DEL`… there is no caller yet; the spike edits the row in `psql` and watches 300 s of staleness, then refreshes a key with a plain `SET` and reads `TTL -1`.
-- [ ] **TB-022:** the cached `remaining` is the fallback; add the integration test that the live count overrides it (ADR 0002).
+- [x] **TB-022:** the cached `remaining` is the fallback; add the integration test that the live count overrides it (ADR 0002) — `composition.test.ts` "shows the live counter, not the cached count".
 - [ ] **When an event writer exists:** the decorator's own `save` wraps the inner `save` and `DEL`s after the commit; normalise the id's case at the `presentation/` boundary first.
 - [ ] **`pingWithin` and `within`:** the same ten lines in two layers; a shared `infrastructure/system` helper would be the place if a third copy appears.
 - [ ] **If the "second read from Redis" tests ever flake on CI:** move the assertion to a spy on the inner repository; do not raise the deadline.

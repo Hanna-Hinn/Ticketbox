@@ -39,6 +39,6 @@ The live count is the authority for _what is happening now_ because it is the nu
 
 **What would make us revisit this:**
 
-- TB-022 deciding that `reserve` on a missing key should seed-and-proceed rather than refuse — then reads and writes would agree again and the fallback could become "missing key is a bug, log it".
+- TB-022 deciding that `reserve` on a missing key should seed-and-proceed rather than refuse — then reads and writes would agree again and the fallback could become "missing key is a bug, log it". _TB-022 decided: refuse, and log a warn naming the tier on the write side, so the disagreement this ADR admitted is no longer silent; seeding stays reconciliation's (TB-027)._
 - TB-039 wanting degraded reads to be _visible_ (a `degraded: true` flag in the response) rather than silent. That is a change to the output shape, not to this rule.
 - Any evidence that the computed query is too slow to run on every read (TB-013's benchmark) — then the fallback would need its own cache, and the "who seeds the counter" question moves to the read path after all.

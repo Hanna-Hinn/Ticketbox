@@ -157,6 +157,6 @@ Ask "which line can throw?" about every step after the first side effect, not "w
 
 - [x] TB-020: decide whether `CreateHold` keeps loading the whole event or switches to `TicketTierRepository.findById` + `tier.eventId` check (plan decision 1).
 - [ ] TB-011: the Zod `qty` schema must use `Quantity.MAX_PER_HOLD`, not a literal (plan decision 9).
-- [ ] TB-012: something must satisfy `GetEventAvailabilityUseCase`'s `HoldStore` constructor parameter before TB-022 exists (plan §8).
-- [ ] TB-022 / TB-027: who seeds the live counter, and what `reserve` returns on a missing key; TB-039: whether the read-path fallback stays silent (ADR 0002).
+- [x] TB-012: something must satisfy `GetEventAvailabilityUseCase`'s `HoldStore` constructor parameter before TB-022 exists (plan §8) — `UnconfiguredHoldStore`, deleted again by TB-022.
+- [ ] TB-022 / TB-027: ~~what `reserve` returns on a missing key~~ (TB-022: refused, logged); **who seeds the live counter** is still open for TB-023/TB-025/TB-027; TB-039: whether the read-path fallback stays silent (ADR 0002).
 - [x] TB-020: `InMemoryHoldStore` has no notion of expiry; "an expired hold cannot be released" needs the fake to take a clock.

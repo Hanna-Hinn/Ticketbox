@@ -142,7 +142,7 @@ Run both test suites before every push, not only typecheck and lint. The two CI 
 ## 8. Follow-ups left behind
 
 - [ ] TB-017: the `redis` closure for `/health`.
-- [ ] TB-022: delete `UnconfiguredHoldStore`; wire `RedisHoldStore`.
+- [x] TB-022: delete `UnconfiguredHoldStore`; wire `RedisHoldStore`.
 - [ ] TB-025: the first non-404 row in `STATUS_OF`, with the test that its envelope code comes from the row.
 - [ ] `app.close()` has no deadline; when long-lived connections exist (SSE, TB-037), `forceCloseConnections` or a timeout becomes a decision.
 - [ ] `domain/errors/DomainError.ts` comment says "TB-012's single error handler" in the future tense; fix when that file is next touched.
