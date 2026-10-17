@@ -8,8 +8,9 @@ import { eventId, tierId, type EventId } from "../../domain/value-objects/Ids.js
 import { Money } from "../../domain/value-objects/Money.js";
 import { describeRedisError } from "./client.js";
 import { keys } from "./keys.js";
-import type { CacheStatsRecorder } from "./RedisCacheStats.js";
-import { within } from "./within.js";
+import { CACHE_COMMAND_DEADLINE_MS, within } from "./within.js";
+
+export { CACHE_COMMAND_DEADLINE_MS };
 
 // Cache-aside in front of another EventRepository (ADR 0003): a miss reads
 // through and writes the event back with a TTL; a hit never touches
@@ -33,9 +34,6 @@ import { within } from "./within.js";
 
 export const CACHE_TTL_SECONDS = 300;
 export const NEGATIVE_TTL_SECONDS = 30;
-// A healthy local GET is ~1 ms and the fallback (Postgres, indexed) ~23 ms;
-// a cache read that takes longer than the fallback has stopped being one.
-export const CACHE_COMMAND_DEADLINE_MS = 100;
 // How long a refresh may take before the mutex expires, and how long a
 // loser waits for the winner's answer before reading through itself.
 export const REFRESH_MUTEX_MS = 1_000;
@@ -43,6 +41,13 @@ export const REFRESH_POLL_MS = 10;
 // The JSON literal `null`: the schema can never accept it as an event, so
 // it cannot be confused with one.
 export const NEGATIVE_SENTINEL = "null";
+
+// What the decorator tells about every lookup: declared by the consumer, like
+// CacheClient, so the Redis-backed recorder and a test fake both satisfy it.
+export interface CacheStatsRecorder {
+  recordHit(): void;
+  recordMiss(): void;
+}
 
 // The subset of ioredis the decorator uses, so a unit test can fake it with
 // a Map. Structural; the real client satisfies it unchanged.
@@ -150,7 +155,7 @@ export class CachedEventRepository implements EventRepository {
     try {
       raw = await within(this.cache.get(key), CACHE_COMMAND_DEADLINE_MS);
     } catch (err: unknown) {
-      this.log.warn({ err: describe(err), key }, "cache read failed; reading through");
+      this.log.warn({ err: describeRedisError(err), key }, "cache read failed; reading through");
       return { kind: "unavailable" };
     }
     if (raw === null) return { kind: "miss" };
@@ -171,7 +176,10 @@ export class CachedEventRepository implements EventRepository {
       );
       return reply === "OK" ? "won" : "lost";
     } catch (err: unknown) {
-      this.log.warn({ err: describe(err) }, "refresh mutex unavailable; reading through");
+      this.log.warn(
+        { err: describeRedisError(err), key: keys.eventRefresh(id) },
+        "refresh mutex unavailable; reading through",
+      );
       return "unavailable";
     }
   }
@@ -179,12 +187,14 @@ export class CachedEventRepository implements EventRepository {
   // A loser polls the cache key, not the mutex: the winner's SET is what it
   // is waiting for. The budget is the mutex's lifetime, so a dead winner
   // costs at most that before the loser reads through itself.
+  // Look first, then sleep: the common race is the winner writing between
+  // the loser's first GET and its SET NX, and that answer is already there.
   private async waitForRefresh(key: string): Promise<Lookup> {
     const deadline = Date.now() + REFRESH_MUTEX_MS;
     while (Date.now() < deadline) {
-      await new Promise((resolve) => setTimeout(resolve, REFRESH_POLL_MS));
       const answer = await this.lookup(key);
       if (answer.kind !== "miss") return answer;
+      await new Promise((resolve) => setTimeout(resolve, REFRESH_POLL_MS));
     }
     return { kind: "miss" };
   }
@@ -200,7 +210,7 @@ export class CachedEventRepository implements EventRepository {
       // makes it immortal (handbook §7.1).
       await within(this.cache.set(key, value, "EX", ttl), CACHE_COMMAND_DEADLINE_MS);
     } catch (err: unknown) {
-      this.log.warn({ err: describe(err), key }, "cache write failed; serving uncached");
+      this.log.warn({ err: describeRedisError(err), key }, "cache write failed; serving uncached");
     }
   }
 
@@ -260,10 +270,4 @@ function fromJson(json: CachedEventJson): Event {
       }),
     ),
   });
-}
-
-function describe(err: unknown): ReturnType<typeof describeRedisError> {
-  return err instanceof Error
-    ? describeRedisError(err)
-    : { name: "unknown", message: String(err), stack: undefined };
 }

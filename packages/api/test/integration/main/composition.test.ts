@@ -93,8 +93,9 @@ describe("compose", () => {
     const jazz = eventId("11111111-1111-4111-8111-111111111111");
     await system.app.inject({ url: `/events/${jazz}` });
     await system.app.inject({ url: `/events/${jazz}` });
-    await redis.ping();
 
+    // The INCRs and the MGET behind /_stats share the system's connection,
+    // in FIFO order; nothing else makes them land first.
     const response = await system.app.inject({ url: "/_stats" });
 
     expect(response.statusCode).toBe(200);

@@ -140,9 +140,8 @@ describe("CachedEventRepository against Redis", () => {
     await repo.findById(JAZZ);
     await repo.findById(JAZZ);
 
-    // The counters are fire-and-forget; read them through the same client
-    // after a round-trip so the INCRs have landed.
-    await redis.ping();
+    // The counters are fire-and-forget, but they were written on the same
+    // connection this MGET uses, and ioredis writes in FIFO order.
     expect(await redis.mget(keys.cacheStats.hits, keys.cacheStats.misses)).toEqual(["2", "1"]);
   });
 

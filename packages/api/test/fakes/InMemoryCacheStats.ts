@@ -1,5 +1,5 @@
 import type { CacheStatsReader } from "../../src/application/ports/CacheStatsReader.js";
-import type { CacheStatsRecorder } from "../../src/infrastructure/redis/RedisCacheStats.js";
+import type { CacheStatsRecorder } from "../../src/infrastructure/redis/CachedEventRepository.js";
 
 export class InMemoryCacheStats implements CacheStatsRecorder, CacheStatsReader {
   hits = 0;

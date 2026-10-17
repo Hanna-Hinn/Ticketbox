@@ -24,12 +24,13 @@ export function createRedisClient(url: string, log: Logger): Redis {
 // args are the password. Log the error, not its arguments. A refused
 // connection to a host with two address families is an AggregateError whose
 // own message is empty and whose reasons sit in `errors` — keep those.
-export function describeRedisError(err: Error): {
+export function describeRedisError(err: unknown): {
   name: string;
   message: string;
   stack: string | undefined;
   causes?: string[];
 } {
+  if (!(err instanceof Error)) return { name: "unknown", message: String(err), stack: undefined };
   const causes =
     err instanceof AggregateError
       ? err.errors.map((cause) => (cause instanceof Error ? cause.message : String(cause)))
