@@ -1,6 +1,6 @@
 # TB-014 — Vite React app with two pages
 
-**Status:** Approved
+**Status:** Implemented — see [`docs/tasks/TB-014-vite-react-app.md`](../tasks/TB-014-vite-react-app.md) §3 for where reality diverged
 **Date:** 2026-10-17
 **Task:** TB-014 (`docs/02-product-delivery-plan.md`)
 **Branch:** `feat/TB-014-vite-react-app` (stacked on `feat/TB-013-smoke-and-baseline`)
