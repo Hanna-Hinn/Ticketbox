@@ -34,7 +34,7 @@ Observed runs on #8, oldest first:
 | ------------------------------------------------------------------------------- | --------------------------------- | -------------------------------------- | ------------- |
 | [39036300063](https://github.com/Hanna-Hinn/Ticketbox/actions/runs/39036300063) | first run of the workflow         | ✅ 18 s                                | ✅ 26 s       |
 | [39036551267](https://github.com/Hanna-Hinn/Ticketbox/actions/runs/39036551267) | deliberate lint error (`0a32a0c`) | ❌ 16 s — `typecheck` Done, `lint` red | ⏭ skipped     |
-| _(next run)_                                                                    | revert + review fixes             | expected ✅                            | expected ✅   |
+| [39036728001](https://github.com/Hanna-Hinn/Ticketbox/actions/runs/39036728001) | revert + review fixes             | ✅ 19 s                                | ✅ 35 s       |
 
 The sabotage proof, from the job log of the red run:
 
@@ -79,7 +79,7 @@ None. One workflow file and one root script.
 
 None new — the Tests line says so. The pipeline runs the existing 8 unit and 14 integration tests on every PR.
 
-**Proven able to fail:** run 39036551267 above. Reverted in the next commit; the revert run is expected green and is linked from the PR.
+**Proven able to fail:** run 39036551267 above. Reverted in the next commit; the revert run (39036728001) is green on both jobs.
 
 **Coverage after this task:** not enforced by CI. The handbook says "Global: 80% — CI fails below", but `vitest.unit.config.ts` only applies thresholds under `--coverage`, which the pipeline does not pass. Deliberate: with `domain/` and `application/` still empty the global threshold would fail against `main/*.ts` entry points today. **TB-042** ("enforce coverage thresholds in CI") is where `--coverage` joins the `checks` job.
 
