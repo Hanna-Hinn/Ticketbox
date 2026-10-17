@@ -367,7 +367,7 @@ describe("RedisHoldStore.release (release_hold.lua)", () => {
       OTHER,
     );
     await redis.hset(keys.tier(OTHER), "remaining", 5);
-    const noCounter = await redis.releaseHold(
+    const realTier = await redis.releaseHold(
       keys.hold(holdToken("tok-1")),
       keys.tier(TIER),
       keys.tierHolds(TIER),
@@ -377,7 +377,7 @@ describe("RedisHoldStore.release (release_hold.lua)", () => {
 
     expect(gone).toBe(-1);
     expect(wrongTier).toBe(-1);
-    expect(noCounter).toBe(8 + 2);
+    expect(realTier).toBe(8 + 2);
     expect(await redis.hget(keys.tier(TIER), "remaining")).toBe("10");
     expect(await redis.hget(keys.tier(OTHER), "remaining")).toBe("5");
     expect(await redis.exists(keys.hold(holdToken("tok-1")))).toBe(0);
