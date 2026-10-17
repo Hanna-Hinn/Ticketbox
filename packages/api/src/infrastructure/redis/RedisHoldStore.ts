@@ -1,21 +1,28 @@
 import type { Redis } from "ioredis";
 import type { Logger } from "pino";
-import type { HoldStore } from "../../application/ports/HoldStore.js";
+import type { ExpiredHold, HoldStore } from "../../application/ports/HoldStore.js";
 import { Hold } from "../../domain/entities/Hold.js";
 import type { HoldToken } from "../../domain/value-objects/HoldToken.js";
 import { eventId, tierId, type TierId } from "../../domain/value-objects/Ids.js";
 import { Quantity } from "../../domain/value-objects/Quantity.js";
 import { describeRedisError } from "./client.js";
+import { decodeMember, encodeMember } from "./holdIndex.js";
 import { keys } from "./keys.js";
 import { defineHoldScripts } from "./scripts.js";
 import { CACHE_COMMAND_DEADLINE_MS, within } from "./within.js";
 
 // The scripts' reply contracts: create_hold.lua answers INSUFFICIENT or
-// NO_COUNTER, release_hold.lua answers NOTHING_TO_RELEASE or NO_COUNTER;
+// NO_COUNTER, release_hold.lua answers NOTHING_TO_RELEASE or NO_COUNTER,
+// sweep_hold.lua answers NOTHING_TO_SWEEP, NO_COUNTER or NOT_EXPIRED;
 // anything >= 0 is the tier's new remaining.
 const INSUFFICIENT = -1;
 const NOTHING_TO_RELEASE = -1;
+const NOTHING_TO_SWEEP = -1;
 const NO_COUNTER = -2;
+const NOT_EXPIRED = -3;
+
+// SCAN's hint, not a limit: Redis returns about this many keys per call.
+const SCAN_COUNT = 100;
 
 // A socket that is "ready" and not answering (half-open TCP, a BUSY server)
 // would hold a POST /holds for as long as the OS takes to notice; the write
@@ -165,6 +172,82 @@ export class RedisHoldStore implements HoldStore {
       now: new Date(createdAtMs),
       ttlMs: expiresAtMs - createdAtMs,
     });
+  }
+
+  async expired(now: Date): Promise<readonly ExpiredHold[]> {
+    this.requireReady("sweep");
+    // SCAN, never KEYS: KEYS walks the whole keyspace in one blocking call.
+    // A scan may hand back a key twice or miss one that moved during a
+    // rehash; the sweeper runs every few seconds, so a duplicate is a
+    // "nothing to sweep" and a miss is next tick's.
+    const found: ExpiredHold[] = [];
+    let cursor = "0";
+    do {
+      const [next, batch] = await within(
+        this.redis.scan(cursor, "MATCH", keys.tierHoldsPattern(), "COUNT", SCAN_COUNT),
+        HOLD_COMMAND_DEADLINE_MS,
+        "scan for expired holds",
+      );
+      cursor = next;
+      for (const key of batch) {
+        const tier = keys.tierIdOfHolds(key);
+        if (tier === null) continue;
+        const members = await within(
+          this.redis.zrangebyscore(key, "-inf", now.getTime()),
+          HOLD_COMMAND_DEADLINE_MS,
+          "expired holds",
+        );
+        for (const member of members) {
+          const decoded = decodeMember(member);
+          if (decoded === null) {
+            // An entry this version did not write (a hold from before the
+            // member carried qty): nothing to restore from, so remove it
+            // rather than retry it every tick; reconciliation (TB-027)
+            // is what puts that quantity back.
+            this.log.warn({ tierId: tier, member }, "unreadable index entry removed; reconcile");
+            await within(this.redis.zrem(key, member), HOLD_COMMAND_DEADLINE_MS, "expired holds");
+            continue;
+          }
+          found.push({ token: decoded.token, tierId: tier, qty: decoded.qty });
+        }
+      }
+    } while (cursor !== "0");
+    return found;
+  }
+
+  async sweep(
+    hold: ExpiredHold,
+    now: Date,
+  ): Promise<
+    | { swept: true; restored: true; remaining: number }
+    | { swept: true; restored: false }
+    | { swept: false }
+  > {
+    this.requireReady("sweep");
+    const left = await within(
+      this.redis.sweepHold(
+        keys.tierHolds(hold.tierId),
+        keys.tier(hold.tierId),
+        keys.hold(hold.token),
+        encodeMember(hold.token, hold.qty),
+        hold.qty,
+        now.getTime(),
+      ),
+      HOLD_COMMAND_DEADLINE_MS,
+      "sweep",
+    );
+    if (left === NOTHING_TO_SWEEP || left === NOT_EXPIRED) return { swept: false };
+    if (left === NO_COUNTER) {
+      // Nothing to restore into; the entry is gone so this is not retried,
+      // and the row is still marked expired so reconciliation's computed
+      // count (ADR 0002) is right when it rebuilds this counter.
+      this.log.warn(
+        { tierId: hold.tierId, token: hold.token, qty: hold.qty, key: keys.tier(hold.tierId) },
+        "no live counter for tier; expired hold swept without restoring; reconcile",
+      );
+      return { swept: true, restored: false };
+    }
+    return { swept: true, restored: true, remaining: left };
   }
 
   // A write against a client that is not connected would sit in ioredis's

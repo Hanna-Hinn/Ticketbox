@@ -5,6 +5,7 @@ import { GetCacheStatsUseCase } from "../application/use-cases/GetCacheStats.js"
 import { GetHoldUseCase } from "../application/use-cases/GetHold.js";
 import { GetEventAvailabilityUseCase } from "../application/use-cases/GetEventAvailability.js";
 import { ListUpcomingEventsUseCase } from "../application/use-cases/ListUpcomingEvents.js";
+import { ReleaseExpiredHoldsUseCase } from "../application/use-cases/ReleaseExpiredHolds.js";
 import { ReleaseHoldUseCase } from "../application/use-cases/ReleaseHold.js";
 import { PgEventRepository } from "../infrastructure/postgres/PgEventRepository.js";
 import { PgHoldRepository } from "../infrastructure/postgres/PgHoldRepository.js";
@@ -23,6 +24,8 @@ import type { Config } from "./config.js";
 
 export interface System {
   readonly app: FastifyInstance;
+  /** One sweep of the expired holds; the worker (worker/sweeper.ts) runs it every 5 s (TB-026). */
+  readonly sweeper: ReleaseExpiredHoldsUseCase;
   close(): Promise<void>;
 }
 
@@ -72,6 +75,7 @@ export function compose(config: Config): System {
   );
   const getHold = new GetHoldUseCase(holds, clock);
   const releaseHold = new ReleaseHoldUseCase(holds, holdMirror);
+  const sweeper = new ReleaseExpiredHoldsUseCase(holds, holdMirror, clock);
 
   // HTTP
   const controller = new EventController(listUpcoming, getAvailability);
@@ -98,6 +102,7 @@ export function compose(config: Config): System {
   let closing: Promise<void> | undefined;
   return {
     app,
+    sweeper,
     close: () => {
       closing ??= (async () => {
         await app.close();

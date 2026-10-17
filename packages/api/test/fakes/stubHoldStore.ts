@@ -11,6 +11,8 @@ export function stubHoldStore(overrides: Partial<HoldStore>): HoldStore {
     release: notInThisTest,
     availability: notInThisTest,
     find: notInThisTest,
+    expired: notInThisTest,
+    sweep: notInThisTest,
     ...overrides,
   };
 }

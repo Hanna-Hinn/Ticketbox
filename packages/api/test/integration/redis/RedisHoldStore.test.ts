@@ -61,7 +61,9 @@ describe("RedisHoldStore.reserve (create_hold.lua)", () => {
       createdAt: String(hold.createdAt.getTime()),
       expiresAt: String(hold.expiresAt.getTime()),
     });
-    expect(await redis.zscore(keys.tierHolds(TIER), hold.token)).toBe(
+    // The member carries the quantity: the hash will not outlive the hold,
+    // the index must (TB-026).
+    expect(await redis.zscore(keys.tierHolds(TIER), `${hold.token}:2`)).toBe(
       String(hold.expiresAt.getTime()),
     );
   });

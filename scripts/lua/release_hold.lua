@@ -12,7 +12,7 @@
 --
 -- KEYS[1]  hold hash        ticketbox:v1:hold:<token>
 -- KEYS[2]  tier hash        ticketbox:v1:tier:<tierId>        { remaining }
--- KEYS[3]  tier holds zset  ticketbox:v1:tier:<tierId>:holds
+-- KEYS[3]  tier holds zset  ticketbox:v1:tier:<tierId>:holds   member "<token>:<qty>" (TB-026)
 -- ARGV[1]  token
 -- ARGV[2]  tierId — the caller read it from the hold before this ran; the
 --          script checks it still is, so KEYS[2] and KEYS[3] cannot name the
@@ -40,5 +40,5 @@ end
 local qty = redis.call('HGET', KEYS[1], 'qty')
 local left = redis.call('HINCRBY', KEYS[2], 'remaining', qty)
 redis.call('DEL', KEYS[1])
-redis.call('ZREM', KEYS[3], ARGV[1])
+redis.call('ZREM', KEYS[3], ARGV[1] .. ':' .. qty)
 return left

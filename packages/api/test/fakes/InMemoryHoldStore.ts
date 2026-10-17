@@ -1,5 +1,5 @@
 import type { Clock } from "../../src/application/ports/Clock.js";
-import type { HoldStore } from "../../src/application/ports/HoldStore.js";
+import type { ExpiredHold, HoldStore } from "../../src/application/ports/HoldStore.js";
 import type { Hold } from "../../src/domain/entities/Hold.js";
 import type { HoldToken } from "../../src/domain/value-objects/HoldToken.js";
 import type { TierId } from "../../src/domain/value-objects/Ids.js";
@@ -11,7 +11,8 @@ import type { TierId } from "../../src/domain/value-objects/Ids.js";
 // Expiry is the one Redis mechanic it does keep, on the injected clock: a
 // hold past its TTL is not there any more, and — as in Redis — its quantity
 // is NOT given back. The key vanishing is not a release; the sweeper
-// (TB-026) is what restores it.
+// (TB-026) is what restores it, through expired() and sweep(), which see
+// the holds the other methods hide.
 //
 // One place it is stricter than Redis, on purpose, because it is a
 // test-authoring bug the fake should make loud: a reused token throws even
@@ -68,6 +69,31 @@ export class InMemoryHoldStore implements HoldStore {
 
   async find(token: HoldToken): Promise<Hold | null> {
     return this.live(token);
+  }
+
+  async expired(now: Date): Promise<readonly ExpiredHold[]> {
+    return [...this.holds.values()]
+      .filter((hold) => hold.isExpired(now))
+      .map((hold) => ({ token: hold.token, tierId: hold.tierId, qty: hold.qty.value }));
+  }
+
+  async sweep(
+    hold: ExpiredHold,
+    now: Date,
+  ): Promise<
+    | { swept: true; restored: true; remaining: number }
+    | { swept: true; restored: false }
+    | { swept: false }
+  > {
+    const held = this.holds.get(hold.token);
+    if (held === undefined) return { swept: false };
+    if (!held.isExpired(now)) return { swept: false };
+    this.holds.delete(hold.token);
+    const current = this.remaining.get(held.tierId);
+    if (current === undefined) return { swept: true, restored: false };
+    const restored = current + held.qty.value;
+    this.remaining.set(held.tierId, restored);
+    return { swept: true, restored: true, remaining: restored };
   }
 
   private live(token: HoldToken): Hold | null {
