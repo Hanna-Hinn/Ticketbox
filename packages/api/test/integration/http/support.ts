@@ -3,7 +3,9 @@ import { GetCacheStatsUseCase } from "../../../src/application/use-cases/GetCach
 import { GetEventAvailabilityUseCase } from "../../../src/application/use-cases/GetEventAvailability.js";
 import { GetHoldUseCase } from "../../../src/application/use-cases/GetHold.js";
 import { ListUpcomingEventsUseCase } from "../../../src/application/use-cases/ListUpcomingEvents.js";
+import { ReconcileEventUseCase } from "../../../src/application/use-cases/ReconcileEvent.js";
 import { ReleaseHoldUseCase } from "../../../src/application/use-cases/ReleaseHold.js";
+import { AdminController } from "../../../src/presentation/http/controllers/AdminController.js";
 import { EventController } from "../../../src/presentation/http/controllers/EventController.js";
 import { HoldController } from "../../../src/presentation/http/controllers/HoldController.js";
 import { StatsController } from "../../../src/presentation/http/controllers/StatsController.js";
@@ -41,6 +43,16 @@ export function unusedHoldController(): HoldController {
     ),
     new GetHoldUseCase(holds, clock),
     new ReleaseHoldUseCase(holds, mirror),
+  );
+}
+
+export function unusedAdminController(): AdminController {
+  return new AdminController(
+    new ReconcileEventUseCase(
+      new InMemoryEventRepository([]),
+      new InMemoryHoldStore(new FakeClock(START)),
+      new InMemoryHoldRepository(),
+    ),
   );
 }
 

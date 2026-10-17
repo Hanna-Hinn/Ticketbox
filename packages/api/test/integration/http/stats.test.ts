@@ -3,7 +3,7 @@ import pino from "pino";
 import { afterEach, describe, expect, it } from "vitest";
 import { GetCacheStatsUseCase } from "../../../src/application/use-cases/GetCacheStats.js";
 import { StatsController } from "../../../src/presentation/http/controllers/StatsController.js";
-import { unusedEventController, unusedHoldController } from "./support.js";
+import { unusedAdminController, unusedEventController, unusedHoldController } from "./support.js";
 import { buildServer } from "../../../src/presentation/http/server.js";
 import { InMemoryCacheStats } from "../../fakes/InMemoryCacheStats.js";
 
@@ -19,6 +19,7 @@ function serverWith(stats: InMemoryCacheStats): FastifyInstance {
     logger: pino({ level: "silent" }),
     events: unusedEventController(),
     stats: new StatsController(new GetCacheStatsUseCase(stats)),
+    admin: unusedAdminController(),
     holds: unusedHoldController(),
     checks: { postgres: ok, redis: ok },
   });

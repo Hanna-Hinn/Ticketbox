@@ -1,5 +1,10 @@
 import type { Clock } from "../../src/application/ports/Clock.js";
-import type { ExpiredHold, HoldStore, SweepResult } from "../../src/application/ports/HoldStore.js";
+import type {
+  ExpiredHold,
+  HeldEntry,
+  HoldStore,
+  SweepResult,
+} from "../../src/application/ports/HoldStore.js";
 import type { Hold } from "../../src/domain/entities/Hold.js";
 import type { HoldToken } from "../../src/domain/value-objects/HoldToken.js";
 import type { TierId } from "../../src/domain/value-objects/Ids.js";
@@ -21,6 +26,9 @@ import type { TierId } from "../../src/domain/value-objects/Ids.js";
 export class InMemoryHoldStore implements HoldStore {
   private readonly remaining = new Map<TierId, number>();
   private readonly holds = new Map<HoldToken, Hold>();
+  // Hashes gone while their index entry stays (evictHash): find() answers
+  // null, held() and expired() still list them, as Redis would.
+  private readonly evicted = new Set<HoldToken>();
 
   constructor(private readonly clock: Clock) {}
 
@@ -68,6 +76,7 @@ export class InMemoryHoldStore implements HoldStore {
   }
 
   async find(token: HoldToken): Promise<Hold | null> {
+    if (this.evicted.has(token)) return null;
     return this.live(token);
   }
 
@@ -90,6 +99,25 @@ export class InMemoryHoldStore implements HoldStore {
     const restored = current + held.qty.value;
     this.remaining.set(held.tierId, restored);
     return { swept: true, restored: true, remaining: restored };
+  }
+
+  async held(tierId: TierId): Promise<readonly HeldEntry[]> {
+    return [...this.holds.values()]
+      .filter((hold) => hold.tierId === tierId)
+      .map((hold) => ({ token: hold.token, qty: hold.qty.value, expiresAt: hold.expiresAt }));
+  }
+
+  async rebuild(tierId: TierId, remaining: number): Promise<{ before: number | null }> {
+    const before = this.remaining.get(tierId) ?? null;
+    this.remaining.set(tierId, remaining);
+    return { before };
+  }
+
+  /** Test-only: drop a hold's record the way an eviction would, keeping its index entry. */
+  evictHash(token: HoldToken): void {
+    const hold = this.holds.get(token);
+    if (hold === undefined) throw new Error(`no hold ${token} to evict`);
+    this.evicted.add(token);
   }
 
   private live(token: HoldToken): Hold | null {

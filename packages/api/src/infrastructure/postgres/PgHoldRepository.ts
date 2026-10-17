@@ -1,7 +1,8 @@
 import type pg from "pg";
 import type { HoldOutcome, HoldRepository } from "../../application/ports/HoldRepository.js";
 import type { Hold } from "../../domain/entities/Hold.js";
-import type { HoldToken } from "../../domain/value-objects/HoldToken.js";
+import { holdToken, type HoldToken } from "../../domain/value-objects/HoldToken.js";
+import type { TierId } from "../../domain/value-objects/Ids.js";
 
 // Kind A: the audit trail of a hold, written after Redis has decided it and
 // never consulted on the hot path (ADR 0004). Its active rows are what the
@@ -30,5 +31,15 @@ export class PgHoldRepository implements HoldRepository {
       status,
       token,
     ]);
+  }
+
+  async activeTokens(tierId: TierId): Promise<readonly HoldToken[]> {
+    // The mirror's one read path, for reconciliation (TB-027); the
+    // (tier_id, status) index from TB-013 serves it.
+    const result = await this.db.query<{ token: string }>(
+      `SELECT token FROM holds WHERE tier_id = $1 AND status = 'active' ORDER BY token`,
+      [tierId],
+    );
+    return result.rows.map((row) => holdToken(row.token));
   }
 }

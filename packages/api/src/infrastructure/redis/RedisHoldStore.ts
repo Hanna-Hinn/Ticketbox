@@ -1,6 +1,11 @@
 import type { Redis } from "ioredis";
 import type { Logger } from "pino";
-import type { ExpiredHold, HoldStore, SweepResult } from "../../application/ports/HoldStore.js";
+import type {
+  ExpiredHold,
+  HeldEntry,
+  HoldStore,
+  SweepResult,
+} from "../../application/ports/HoldStore.js";
 import { Hold } from "../../domain/entities/Hold.js";
 import type { HoldToken } from "../../domain/value-objects/HoldToken.js";
 import { eventId, tierId, type TierId } from "../../domain/value-objects/Ids.js";
@@ -253,6 +258,53 @@ export class RedisHoldStore implements HoldStore {
       return { swept: true, restored: false };
     }
     return { swept: true, restored: true, remaining: left };
+  }
+
+  async held(tierId: TierId): Promise<readonly HeldEntry[]> {
+    this.requireReady("list held");
+    const raw = await within(
+      this.redis.zrange(keys.tierHolds(tierId), "0", "-1", "WITHSCORES"),
+      HOLD_COMMAND_DEADLINE_MS,
+      "held",
+    );
+    const entries: HeldEntry[] = [];
+    // WITHSCORES interleaves: member, score, member, score …
+    for (let i = 0; i + 1 < raw.length; i += 2) {
+      const member = raw[i];
+      const score = raw[i + 1];
+      if (member === undefined || score === undefined) break;
+      const decoded = decodeMember(member);
+      // An entry this version did not write is the sweeper's to remove on
+      // its next pass; one cleaner per mess.
+      if (decoded === null) continue;
+      entries.push({ token: decoded.token, qty: decoded.qty, expiresAt: new Date(Number(score)) });
+    }
+    return entries;
+  }
+
+  async rebuild(tierId: TierId, remaining: number): Promise<{ before: number | null }> {
+    this.requireReady("rebuild");
+    // MULTI/EXEC: the read and the overwrite run as one unit, no command
+    // from anyone else between them — the non-Lua way to make two commands
+    // atomic when nothing has to be decided in the middle. HSET on a key
+    // with no TTL loses nothing.
+    const replies = await within(
+      this.redis
+        .multi()
+        .hget(keys.tier(tierId), "remaining")
+        .hset(keys.tier(tierId), "remaining", remaining)
+        .exec(),
+      HOLD_COMMAND_DEADLINE_MS,
+      "rebuild",
+    );
+    // exec() answers null only when a WATCHed key changed; nothing is watched.
+    const first = replies?.[0];
+    if (first === undefined) throw new Error(`rebuild of ${tierId}: transaction returned nothing`);
+    const [err, previous] = first;
+    if (err) throw err;
+    if (previous === null || previous === undefined) return { before: null };
+    const before = Number(previous);
+    return { before: Number.isFinite(before) ? before : null };
   }
 
   // A write against a client that is not connected would sit in ioredis's

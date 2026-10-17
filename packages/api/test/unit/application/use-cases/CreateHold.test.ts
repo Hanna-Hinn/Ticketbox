@@ -143,6 +143,7 @@ describe("CreateHoldUseCase", () => {
         await mirror.save(hold);
       },
       setStatus: mirror.setStatus.bind(mirror),
+      activeTokens: mirror.activeTokens.bind(mirror),
     };
     const useCase = new CreateHoldUseCase(
       events,
