@@ -19,16 +19,26 @@ export interface ServerDeps {
 }
 
 const CORRELATION_HEADER = "x-correlation-id";
+// A client id is a courtesy, not a contract: anything outside this shape is
+// silently replaced, so a 5 kB header cannot become a 5 kB field on every
+// log line of the request.
+const CORRELATION_ID = /^[A-Za-z0-9_-]{1,64}$/;
 
 // Everything the server needs arrives through `deps`; nothing here knows
 // what is behind a controller or where the logger writes.
 export function buildServer(deps: ServerDeps): FastifyInstance {
   const app = Fastify({
     loggerInstance: deps.logger,
-    // The correlation id is Fastify's request id: taken from the client's
-    // header when present, generated otherwise, on every log line as reqId.
-    requestIdHeader: CORRELATION_HEADER,
-    genReqId: () => randomUUID(),
+    // The correlation id is Fastify's request id: the client's header when
+    // it is well-formed, generated otherwise, on every log line as reqId.
+    // requestIdHeader is off because Fastify would use the header unchecked.
+    requestIdHeader: false,
+    genReqId: (req) => {
+      const supplied = req.headers[CORRELATION_HEADER];
+      return typeof supplied === "string" && CORRELATION_ID.test(supplied)
+        ? supplied
+        : randomUUID();
+    },
   });
   app.setValidatorCompiler(validatorCompiler);
   app.setSerializerCompiler(serializerCompiler);
