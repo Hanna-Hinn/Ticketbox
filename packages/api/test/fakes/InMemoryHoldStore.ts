@@ -1,5 +1,5 @@
 import type { Clock } from "../../src/application/ports/Clock.js";
-import type { ExpiredHold, HoldStore } from "../../src/application/ports/HoldStore.js";
+import type { ExpiredHold, HoldStore, SweepResult } from "../../src/application/ports/HoldStore.js";
 import type { Hold } from "../../src/domain/entities/Hold.js";
 import type { HoldToken } from "../../src/domain/value-objects/HoldToken.js";
 import type { TierId } from "../../src/domain/value-objects/Ids.js";
@@ -77,16 +77,12 @@ export class InMemoryHoldStore implements HoldStore {
       .map((hold) => ({ token: hold.token, tierId: hold.tierId, qty: hold.qty.value }));
   }
 
-  async sweep(
-    hold: ExpiredHold,
-    now: Date,
-  ): Promise<
-    | { swept: true; restored: true; remaining: number }
-    | { swept: true; restored: false }
-    | { swept: false }
-  > {
+  async sweep(hold: ExpiredHold, now: Date): Promise<SweepResult> {
     const held = this.holds.get(hold.token);
     if (held === undefined) return { swept: false };
+    // As strict as Redis: the real store looks up the member the argument
+    // re-encodes to, so a wrong qty or tier finds nothing.
+    if (held.qty.value !== hold.qty || held.tierId !== hold.tierId) return { swept: false };
     if (!held.isExpired(now)) return { swept: false };
     this.holds.delete(hold.token);
     const current = this.remaining.get(held.tierId);

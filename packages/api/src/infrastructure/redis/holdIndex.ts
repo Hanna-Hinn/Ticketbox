@@ -15,5 +15,10 @@ export function decodeMember(member: string): { token: HoldToken; qty: number } 
   if (at <= 0) return null;
   const qty = Number(member.slice(at + 1));
   if (!Number.isInteger(qty) || qty < 1) return null;
-  return { token: holdToken(member.slice(0, at)), qty };
+  const token = holdToken(member.slice(0, at));
+  // Only a member this version would write back identically can be swept
+  // (the script looks the re-encoded member up): "tok:02" decodes, does
+  // not round-trip, and would otherwise be listed and refused every tick.
+  if (encodeMember(token, qty) !== member) return null;
+  return { token, qty };
 }

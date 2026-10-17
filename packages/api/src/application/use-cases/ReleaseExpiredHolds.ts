@@ -8,8 +8,8 @@ export interface ReleaseExpiredHoldsOutput {
   readonly swept: number;
   /** Of those, the ones whose tickets went back (the rest had no counter). */
   readonly restored: number;
-  /** Swept holds whose row could not be marked: active rows for holds that are gone (ADR 0004). */
-  readonly unmarked: readonly HoldToken[];
+  /** Swept holds whose row could not be marked, and why: active rows for holds that are gone (ADR 0004 row 2). */
+  readonly unmarked: readonly { readonly token: HoldToken; readonly error: unknown }[];
 }
 
 // The sweeper's one pass: every hold the index says has expired, restored
@@ -32,7 +32,7 @@ export class ReleaseExpiredHoldsUseCase {
     const expired = await this.holds.expired(now);
     let swept = 0;
     let restored = 0;
-    const unmarked: HoldToken[] = [];
+    const unmarked: { token: HoldToken; error: unknown }[] = [];
     for (const hold of expired) {
       const result = await this.holds.sweep(hold, now);
       if (!result.swept) continue;
@@ -40,8 +40,8 @@ export class ReleaseExpiredHoldsUseCase {
       if (result.restored) restored += 1;
       try {
         await this.mirror.setStatus(hold.token, "expired");
-      } catch {
-        unmarked.push(hold.token);
+      } catch (error: unknown) {
+        unmarked.push({ token: hold.token, error });
       }
     }
     return { swept, restored, unmarked };

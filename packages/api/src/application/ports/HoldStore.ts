@@ -9,6 +9,7 @@ import type { TierId } from "../../domain/value-objects/Ids.js";
 // The store is keyed on tiers only. It does not know which event a tier
 // belongs to — the caller does (EventRepository hands back an Event with
 // its tiers), so availability is asked for by tier ids, not event id.
+
 // An entry of the store's expiry index: what the sweeper needs and nothing
 // the hold hash had — by the time it may be swept, the hash is gone.
 export interface ExpiredHold {
@@ -16,6 +17,14 @@ export interface ExpiredHold {
   readonly tierId: TierId;
   readonly qty: number;
 }
+
+// swept: false — someone else already did (a late release, another sweeper);
+// restored: false — the tier has no counter to restore into (evicted): the
+// entry is removed and nothing is added back, reconciliation rebuilds it.
+export type SweepResult =
+  | { swept: true; restored: true; remaining: number }
+  | { swept: true; restored: false }
+  | { swept: false };
 
 export interface HoldStore {
   /**
@@ -48,18 +57,6 @@ export interface HoldStore {
   /** Every hold whose expiry is at or before `now`, as the store's index sees them. */
   expired(now: Date): Promise<readonly ExpiredHold[]>;
 
-  /**
-   * Restore an expired hold's quantity exactly once (TB-026). swept: false —
-   * someone else already did (a late release, another sweeper); restored:
-   * false — the tier has no counter to restore into (evicted): the entry is
-   * removed and nothing is added back, reconciliation rebuilds the counter.
-   */
-  sweep(
-    hold: ExpiredHold,
-    now: Date,
-  ): Promise<
-    | { swept: true; restored: true; remaining: number }
-    | { swept: true; restored: false }
-    | { swept: false }
-  >;
+  /** Restore an expired hold's quantity exactly once (TB-026). */
+  sweep(hold: ExpiredHold, now: Date): Promise<SweepResult>;
 }

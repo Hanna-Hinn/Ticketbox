@@ -1,6 +1,6 @@
 import type { Redis } from "ioredis";
 import type { Logger } from "pino";
-import type { ExpiredHold, HoldStore } from "../../application/ports/HoldStore.js";
+import type { ExpiredHold, HoldStore, SweepResult } from "../../application/ports/HoldStore.js";
 import { Hold } from "../../domain/entities/Hold.js";
 import type { HoldToken } from "../../domain/value-objects/HoldToken.js";
 import { eventId, tierId, type TierId } from "../../domain/value-objects/Ids.js";
@@ -175,7 +175,7 @@ export class RedisHoldStore implements HoldStore {
   }
 
   async expired(now: Date): Promise<readonly ExpiredHold[]> {
-    this.requireReady("sweep");
+    this.requireReady("list expired holds");
     // SCAN, never KEYS: KEYS walks the whole keyspace in one blocking call.
     // A scan may hand back a key twice or miss one that moved during a
     // rehash; the sweeper runs every few seconds, so a duplicate is a
@@ -191,7 +191,12 @@ export class RedisHoldStore implements HoldStore {
       cursor = next;
       for (const key of batch) {
         const tier = keys.tierIdOfHolds(key);
-        if (tier === null) continue;
+        if (tier === null) {
+          // The pattern matched a key the parser does not: the two have
+          // drifted, and a sweeper that finds nothing must not be silent.
+          this.log.warn({ key }, "index key does not parse; skipped");
+          continue;
+        }
         const members = await within(
           this.redis.zrangebyscore(key, "-inf", now.getTime()),
           HOLD_COMMAND_DEADLINE_MS,
@@ -215,14 +220,7 @@ export class RedisHoldStore implements HoldStore {
     return found;
   }
 
-  async sweep(
-    hold: ExpiredHold,
-    now: Date,
-  ): Promise<
-    | { swept: true; restored: true; remaining: number }
-    | { swept: true; restored: false }
-    | { swept: false }
-  > {
+  async sweep(hold: ExpiredHold, now: Date): Promise<SweepResult> {
     this.requireReady("sweep");
     const left = await within(
       this.redis.sweepHold(
@@ -236,7 +234,14 @@ export class RedisHoldStore implements HoldStore {
       HOLD_COMMAND_DEADLINE_MS,
       "sweep",
     );
-    if (left === NOTHING_TO_SWEEP || left === NOT_EXPIRED) return { swept: false };
+    if (left === NOTHING_TO_SWEEP) return { swept: false };
+    if (left === NOT_EXPIRED) {
+      // The script refused an alive hold. expired() never lists one, so this
+      // is a caller handing the store something it did not get from
+      // expired(), or a clock running ahead of the one that set the score.
+      this.log.warn({ tierId: hold.tierId, token: hold.token }, "sweep refused: hold not expired");
+      return { swept: false };
+    }
     if (left === NO_COUNTER) {
       // Nothing to restore into; the entry is gone so this is not retried,
       // and the row is still marked expired so reconciliation's computed

@@ -17,10 +17,10 @@ const stop = runEvery(
   async () => {
     const result = await system.sweeper.execute();
     if (result.swept > 0) log.info(result, "swept expired holds");
-    if (result.unmarked.length > 0) {
-      // Tickets are back; the rows still say active. Reconciliation (TB-027)
-      // closes that; until then the tokens are in the log.
-      log.error({ tokens: result.unmarked }, "expired holds swept but their rows not marked");
+    // Tickets are back; the row still says active. Reconciliation (TB-027)
+    // closes that; until then the token and the reason are in the log.
+    for (const { token, error } of result.unmarked) {
+      log.error({ token, err: error }, "expired hold swept but its row not marked");
     }
   },
   (err: unknown) => log.error({ err }, "sweep failed; retrying next tick"),
@@ -30,6 +30,8 @@ log.info({ intervalMs: SWEEP_INTERVAL_MS }, "sweeper started");
 for (const signal of ["SIGTERM", "SIGINT"] as const) {
   process.on(signal, () => {
     log.info({ signal }, "shutting down");
+    // A tick in flight finishes against a closing client and logs one
+    // "sweep failed" after this line; the next tick never starts.
     stop();
     system.close().catch((err: unknown) => {
       log.error({ err }, "shutdown failed");

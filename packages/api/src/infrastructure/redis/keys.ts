@@ -8,7 +8,7 @@ import { tierId, type EventId, type TierId } from "../../domain/value-objects/Id
 // cluster (handbook): no hash tags.
 
 const KEY_PREFIX = "ticketbox:v1:";
-const TIER_HOLDS_KEY = /^ticketbox:v1:tier:([^:]+):holds$/;
+const TIER_HOLDS_KEY = new RegExp(`^${KEY_PREFIX}tier:([^:]+):holds$`);
 
 export const keys = {
   // hash: { remaining } — the live counter (TB-022)
