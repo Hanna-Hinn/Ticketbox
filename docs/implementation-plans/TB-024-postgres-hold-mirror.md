@@ -1,6 +1,6 @@
 # TB-024 — Postgres hold mirror
 
-**Status:** Approved
+**Status:** Implemented — see [`docs/tasks/TB-024-postgres-hold-mirror.md`](../tasks/TB-024-postgres-hold-mirror.md) §3 for where reality diverged
 **Date:** 2026-10-17
 **Task:** TB-024 (`docs/02-product-delivery-plan.md`)
 **Branch:** `feat/TB-024-postgres-hold-mirror` (stacked on `feat/TB-023-release-compare-and-restore`)
@@ -150,3 +150,11 @@ None blocking. Decision 2 (no compensation when the mirror write fails) is the o
 - ☑ Task doc — `docs/tasks/TB-024-postgres-hold-mirror.md`
 - ☐ Benchmark entry — nothing measurable changed
 - ☐ NOTES entry — not a SPIKE task
+
+---
+
+## 10. Amendments after implementation
+
+- **Decision 2 reversed** (compensating release), **§6 corrected** (the hold-with-no-row window over-reports; the caller's outcome on a failed `setStatus`), both in review.
+- **§4:** the three task docs listed for follow-up ticks had no TB-024 item and were not touched.
+- **§5:** the second `hold-mirror` case was dropped; the first asserts the number on both sides; four tests were added on the review's findings.
