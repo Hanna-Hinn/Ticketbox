@@ -4,6 +4,7 @@ import { Hold } from "../../../../src/domain/entities/Hold.js";
 import { holdToken } from "../../../../src/domain/value-objects/HoldToken.js";
 import { tierId } from "../../../../src/domain/value-objects/Ids.js";
 import { Quantity } from "../../../../src/domain/value-objects/Quantity.js";
+import { aHold } from "../../../fakes/builders.js";
 import { FakeClock } from "../../../fakes/FakeClock.js";
 import { InMemoryHoldStore } from "../../../fakes/InMemoryHoldStore.js";
 import { stubHoldStore } from "../../../fakes/stubHoldStore.js";
@@ -18,7 +19,15 @@ async function world(): Promise<{ useCase: GetHoldUseCase; clock: FakeClock }> {
   const clock = new FakeClock("2026-01-01T10:00:00.000Z");
   const holds = new InMemoryHoldStore(clock);
   holds.seed(TIER, 10);
-  await holds.reserve(TIER, 2, TOKEN, TTL_MS);
+  await holds.reserve(
+    aHold()
+      .forTier(TIER)
+      .withToken(TOKEN)
+      .withQty(2)
+      .createdAt(clock.now())
+      .withTtl(TTL_MS)
+      .build(),
+  );
   return { useCase: new GetHoldUseCase(holds, clock), clock };
 }
 

@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { ReleaseHoldUseCase } from "../../../../src/application/use-cases/ReleaseHold.js";
 import { holdToken } from "../../../../src/domain/value-objects/HoldToken.js";
 import { tierId } from "../../../../src/domain/value-objects/Ids.js";
+import { aHold } from "../../../fakes/builders.js";
 import { FakeClock } from "../../../fakes/FakeClock.js";
 import { InMemoryHoldStore } from "../../../fakes/InMemoryHoldStore.js";
 import { stubHoldStore } from "../../../fakes/stubHoldStore.js";
@@ -19,7 +20,15 @@ async function world(): Promise<{
   const clock = new FakeClock("2026-01-01T10:00:00.000Z");
   const holds = new InMemoryHoldStore(clock);
   holds.seed(TIER, 10);
-  await holds.reserve(TIER, 4, TOKEN, TTL_MS);
+  await holds.reserve(
+    aHold()
+      .forTier(TIER)
+      .withToken(TOKEN)
+      .withQty(4)
+      .createdAt(clock.now())
+      .withTtl(TTL_MS)
+      .build(),
+  );
   return { useCase: new ReleaseHoldUseCase(holds), holds, clock };
 }
 

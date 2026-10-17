@@ -5,7 +5,7 @@ import { compose, type System } from "../../../src/main/composition.js";
 import { runMigrations } from "../../../src/infrastructure/postgres/migrations.js";
 import { seed } from "../../../src/infrastructure/postgres/seed.js";
 import { keys } from "../../../src/infrastructure/redis/keys.js";
-import { eventId } from "../../../src/domain/value-objects/Ids.js";
+import { eventId, tierId } from "../../../src/domain/value-objects/Ids.js";
 import { connectToTestDatabase, resetSchema, testDatabaseUrl } from "../support/database.js";
 import { connectToTestRedis, testRedisUrl } from "../support/redis.js";
 
@@ -87,6 +87,24 @@ describe("compose", () => {
     const second = await system.app.inject({ url: `/events/${jazz}` });
 
     expect(second.json<{ name: string }>().name).toBe("From the cache");
+  });
+
+  it("shows the live counter, not the cached count, for a tier the store knows", async () => {
+    const jazz = eventId("11111111-1111-4111-8111-111111111111");
+    const general = tierId("11111111-1111-4111-8111-aaaaaaaaaaaa");
+    await system.app.inject({ url: `/events/${jazz}` });
+    expect(await redis.get(keys.eventCache(jazz))).not.toBeNull();
+    await redis.hset(keys.tier(general), "remaining", 7);
+
+    const response = await system.app.inject({ url: `/events/${jazz}` });
+
+    // The cached event still says 1000; the store's 7 wins (ADR 0002), and
+    // the tiers the store has never seen keep their computed count.
+    const tiers = response.json<{ tiers: { id: string; remaining: number }[] }>().tiers;
+    expect(tiers.find((tier) => tier.id === general)?.remaining).toBe(7);
+    expect(tiers.filter((tier) => tier.id !== general).every((tier) => tier.remaining >= 0)).toBe(
+      true,
+    );
   });
 
   it("exposes the cache counters at /_stats", async () => {

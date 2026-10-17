@@ -49,7 +49,7 @@ export class CreateHoldUseCase {
     // The only place the decision is made. No pre-check against
     // tier.remaining: that is a snapshot, and two answers to one question
     // is how a stale one ends up winning.
-    const reserved = await this.holds.reserve(tier.id, qty.value, token, this.holdTtlMs);
+    const reserved = await this.holds.reserve(hold);
     if (!reserved.ok) return { ok: false, reason: "insufficient" };
 
     return { ok: true, token, expiresAt: hold.expiresAt, remaining: reserved.remaining };

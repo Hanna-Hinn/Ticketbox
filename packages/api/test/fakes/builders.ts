@@ -1,7 +1,10 @@
 import { Event } from "../../src/domain/entities/Event.js";
+import { Hold } from "../../src/domain/entities/Hold.js";
 import { TicketTier } from "../../src/domain/entities/TicketTier.js";
+import { holdToken } from "../../src/domain/value-objects/HoldToken.js";
 import { eventId, tierId, type EventId } from "../../src/domain/value-objects/Ids.js";
 import { Money } from "../../src/domain/value-objects/Money.js";
+import { Quantity } from "../../src/domain/value-objects/Quantity.js";
 
 // aTier().withRemaining(10).build() — forty lines of setup per test is how
 // tests stop being read.
@@ -76,10 +79,57 @@ class EventBuilder {
   }
 }
 
+class HoldBuilder {
+  private token = "tok-1";
+  private tier = "11111111-1111-4111-8111-aaaaaaaaaaaa";
+  private qty = 2;
+  private created = new Date("2026-01-01T10:00:00.000Z");
+  private ttlMs = 120_000;
+
+  withToken(token: string): this {
+    this.token = token;
+    return this;
+  }
+
+  forTier(id: string): this {
+    this.tier = id;
+    return this;
+  }
+
+  withQty(qty: number): this {
+    this.qty = qty;
+    return this;
+  }
+
+  createdAt(at: string | Date): this {
+    this.created = new Date(at);
+    return this;
+  }
+
+  withTtl(ttlMs: number): this {
+    this.ttlMs = ttlMs;
+    return this;
+  }
+
+  build(): Hold {
+    return Hold.create({
+      token: holdToken(this.token),
+      tierId: tierId(this.tier),
+      qty: Quantity.of(this.qty),
+      now: this.created,
+      ttlMs: this.ttlMs,
+    });
+  }
+}
+
 export function aTier(): TierBuilder {
   return new TierBuilder();
 }
 
 export function anEvent(): EventBuilder {
   return new EventBuilder();
+}
+
+export function aHold(): HoldBuilder {
+  return new HoldBuilder();
 }

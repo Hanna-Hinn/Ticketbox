@@ -10,12 +10,14 @@ import type { TierId } from "../../domain/value-objects/Ids.js";
 // belongs to — the caller does (EventRepository hands back an Event with
 // its tiers), so availability is asked for by tier ids, not event id.
 export interface HoldStore {
-  /** Atomically reserve qty from a tier. Insufficient inventory is a value, not a throw. */
+  /**
+   * Atomically reserve hold.qty from hold.tierId under hold.token, expiring
+   * at hold.expiresAt. Insufficient inventory is a value, not a throw. The
+   * entity carries every instant, so one clock — the use case's — sets the
+   * expiry the client sees, the store's index, and the hold's own record.
+   */
   reserve(
-    tierId: TierId,
-    qty: number,
-    token: HoldToken,
-    ttlMs: number,
+    hold: Hold,
   ): Promise<{ ok: true; remaining: number } | { ok: false; reason: "insufficient" }>;
 
   /**

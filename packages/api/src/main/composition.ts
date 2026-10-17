@@ -7,9 +7,9 @@ import { PgEventRepository } from "../infrastructure/postgres/PgEventRepository.
 import { createPool } from "../infrastructure/postgres/pool.js";
 import { CachedEventRepository } from "../infrastructure/redis/CachedEventRepository.js";
 import { RedisCacheStats } from "../infrastructure/redis/RedisCacheStats.js";
+import { RedisHoldStore } from "../infrastructure/redis/RedisHoldStore.js";
 import { closeRedisClient, createRedisClient } from "../infrastructure/redis/client.js";
 import { SystemClock } from "../infrastructure/system/SystemClock.js";
-import { UnconfiguredHoldStore } from "../infrastructure/system/UnconfiguredHoldStore.js";
 import { EventController } from "../presentation/http/controllers/EventController.js";
 import { StatsController } from "../presentation/http/controllers/StatsController.js";
 import { buildServer } from "../presentation/http/server.js";
@@ -43,7 +43,9 @@ export function compose(config: Config): System {
     cacheStats, // CacheStatsRecorder
     log.child({ component: "event-cache" }),
   );
-  const holds = new UnconfiguredHoldStore(); // HoldStore, until TB-022
+  // HoldStore: the live counters and holds, create_hold.lua behind reserve
+  // (TB-022). Nothing seeds the counters yet (TB-027).
+  const holds = new RedisHoldStore(redis, log.child({ component: "hold-store" }));
   const clock = new SystemClock(); // Clock
 
   // Use cases

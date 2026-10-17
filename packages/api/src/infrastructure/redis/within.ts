@@ -7,10 +7,14 @@
 // a cache read that takes longer than the fallback has stopped being one.
 export const CACHE_COMMAND_DEADLINE_MS = 100;
 
-export async function within<T>(command: Promise<T>, ms: number): Promise<T> {
+export async function within<T>(
+  command: Promise<T>,
+  ms: number,
+  what = "cache command",
+): Promise<T> {
   let timer: NodeJS.Timeout | undefined;
   const deadline = new Promise<never>((_, reject) => {
-    timer = setTimeout(() => reject(new Error(`cache command exceeded ${ms}ms`)), ms);
+    timer = setTimeout(() => reject(new Error(`${what} exceeded ${ms}ms`)), ms);
   });
   try {
     return await Promise.race([command, deadline]);

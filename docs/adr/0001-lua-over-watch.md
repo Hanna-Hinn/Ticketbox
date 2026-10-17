@@ -1,12 +1,12 @@
 # 0001 — Use a Lua script, not WATCH/MULTI, for atomic hold reservation
 
 **Status:** Accepted
-**Date:** _fill in when you actually make this decision in TB-022_
+**Date:** 2026-10-17 (written as a placeholder in TB-001; dated and completed by TB-022)
 **Task:** TB-022
 
 ## Context
 
-Reserving tickets for a hold requires: read current availability for a tier → decide whether the requested quantity fits → if it does, decrement availability and write the hold. Between the read and the write, another request can run the same sequence against the same tier. TB-021 (spike) demonstrated this directly: a naive `HGET` → check in TypeScript → `HINCRBY` implementation oversold a 10-ticket tier under 200 concurrent requests.
+Reserving tickets for a hold requires: read current availability for a tier → decide whether the requested quantity fits → if it does, decrement availability and write the hold. Between the read and the write, another request can run the same sequence against the same tier. TB-021 (spike) demonstrated this directly: a naive `HGET` → check in TypeScript → `HINCRBY` implementation answered **200 of 200** requests with a hold against a 10-ticket tier and left the counter at **−390** — 195 oversold holds — six runs out of six, on one connection and on ten (`docs/NOTES.md` § TB-021). The same test against `create_hold.lua`: exactly 5 holds, counter exactly 0, the five winners seeing 8, 6, 4, 2, 0 — twenty runs out of twenty (`BENCHMARKS.md` §7).
 
 Redis offers two ways to make a read-decide-write sequence safe: optimistic locking with `WATCH`/`MULTI`/`EXEC`, or a Lua script.
 
@@ -29,6 +29,8 @@ Use a Lua script (`create_hold.lua`), registered via `defineCommand` and execute
 - One round trip, one atomic unit, no retry loop to get wrong
 - Business logic ("insufficient inventory") and mechanism (the decrement) live in the same script, so there's no window where they can disagree
 - TTL and inventory decrement happen together, so a hold's expiry and its reservation are set up atomically too
+- The script is the right place to absorb the transport's own retry: ioredis re-sends a command that was in flight when the socket dropped, so a script whose reply was lost runs again with the same token. `EXISTS` on the hold key — the token's receipt — makes the replay answer with the current count instead of paying twice. A `WATCH` loop in app code would have had to carry that state itself
+- One clock: the use case's `Clock` sets the hold's `expiresAt`, and the script writes that same instant into the hold hash and the sweeper's sorted set; only the key's `PEXPIRE` is relative, on Redis's clock. Under skew the key and the index can disagree by the skew, and TB-023/TB-026 must be correct in either order
 
 **Bad / accepted trade-off:**
 
