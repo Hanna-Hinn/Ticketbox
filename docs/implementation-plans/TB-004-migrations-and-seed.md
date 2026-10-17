@@ -1,6 +1,6 @@
 # TB-004 — Migrations and seed data
 
-**Status:** Approved
+**Status:** Implemented — see [`docs/tasks/TB-004-migrations-and-seed.md`](../tasks/TB-004-migrations-and-seed.md) for what actually happened, including two plan amendments the Phase 3 review forced (decisions 8–10)
 **Date:** 2026-10-17
 **Task:** TB-004 (`docs/02-product-delivery-plan.md`)
 **Branch:** `feat/TB-004-migrations-and-seed`
@@ -100,6 +100,9 @@ The sold-out tier is `total_qty = 0` — the literal reading of "one tier delibe
 5. **The runner does not take an advisory lock.** Two runners started _at the same instant_ could both try to apply the same file; the loser's `CREATE TABLE` fails and rolls back. The Acceptance line is about sequential re-runs, which are safe. Recorded under §6 as a known limitation rather than built.
 6. **`orders.hold_token` is `UNIQUE`.** A hold converts to at most one order; this is a truth constraint, not a feature. `idempotency_key` is _not_ added here — TB-029 names it and will ship it as `006_…sql`, which also exercises "never edit a migration that has already run".
 7. **Integration tests run against a dedicated database `ticketbox_test`**, per handbook §4.1 ("a dedicated Postgres database"). A small support module derives its URL from `DATABASE_URL` (swapping the database name), creates the database if it is missing, and offers `resetSchema()` (`DROP SCHEMA public CASCADE; CREATE SCHEMA public`) so each migration test starts from genuinely empty. The transaction-rollback isolation the handbook describes does not fit migration tests, whose whole job is to commit DDL.
+8. **`pnpm-workspace.yaml` gains `allowBuilds: { esbuild: true }`** _(added after Phase 3 review — it was missing from this plan)_. pnpm 11 blocks dependency install scripts by default; `tsx` depends on `esbuild`, whose postinstall installs the platform binary. Without the allow-list every `pnpm` script in the repo fails with `ERR_PNPM_IGNORED_BUILDS`. Scope: esbuild only, not a blanket allow.
+9. **Seed `starts_at` is an offset from the seed run (`now() + interval`), not a calendar date** _(changed after Phase 3 review)_. The first draft used fixed dates in December 2026. `GET /events` lists _upcoming_ events (TB-010 `listUpcoming`), so after that date a fresh clone would seed an empty-looking box office — and `ON CONFLICT DO NOTHING` means re-seeding could never refresh the dates. Offsets of 7, 8 and 9 weeks keep the ids fixed (idempotency unchanged) and the events always in the future at seed time.
+10. **`vitest.integration.config.ts` sets `fileParallelism: false`.** Integration test files share one real `ticketbox_test` database and the migration tests drop and recreate its schema; two files running in parallel workers would corrupt each other. Serial files, parallel-within-file is the right shape for a suite that owns a real engine.
 
 ---
 
