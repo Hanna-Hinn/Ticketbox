@@ -13,6 +13,12 @@ import { Quantity } from "../../src/domain/value-objects/Quantity.js";
 // hold past its TTL is not there any more, and — as in Redis — its quantity
 // is NOT given back. The key vanishing is not a release; the sweeper
 // (TB-026) is what restores it.
+//
+// Two places it is stricter than Redis will be, on purpose, because both are
+// test-authoring bugs it should make loud: a reused token throws even if the
+// earlier hold has expired (Redis would accept the SET on a vanished key),
+// and a qty outside Quantity's bounds throws (the Lua would just decrement;
+// the fake must build a Hold, and CreateHold validates before it gets here).
 export class InMemoryHoldStore implements HoldStore {
   private readonly remaining = new Map<TierId, number>();
   private readonly holds = new Map<HoldToken, Hold>();
@@ -31,6 +37,7 @@ export class InMemoryHoldStore implements HoldStore {
   ): Promise<{ ok: true; remaining: number } | { ok: false; reason: "insufficient" }> {
     // A duplicate token is a test-authoring bug; silently overwriting the
     // first hold would leak its quantity, which a fake must make loud.
+    // Expired holds count too (see the header): stricter than Redis here.
     if (this.holds.has(token)) throw new Error(`token ${token} already holds a reservation`);
     const current = this.remaining.get(tierId);
     if (current === undefined || current < qty) return { ok: false, reason: "insufficient" };

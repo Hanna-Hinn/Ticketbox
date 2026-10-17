@@ -1,5 +1,4 @@
 import { describe, expect, it } from "vitest";
-import type { HoldStore } from "../../../../src/application/ports/HoldStore.js";
 import { GetHoldUseCase } from "../../../../src/application/use-cases/GetHold.js";
 import { Hold } from "../../../../src/domain/entities/Hold.js";
 import { holdToken } from "../../../../src/domain/value-objects/HoldToken.js";
@@ -7,6 +6,7 @@ import { tierId } from "../../../../src/domain/value-objects/Ids.js";
 import { Quantity } from "../../../../src/domain/value-objects/Quantity.js";
 import { FakeClock } from "../../../fakes/FakeClock.js";
 import { InMemoryHoldStore } from "../../../fakes/InMemoryHoldStore.js";
+import { stubHoldStore } from "../../../fakes/stubHoldStore.js";
 
 const TTL_MS = 120_000;
 const TIER = tierId("11111111-1111-4111-8111-aaaaaaaaaaaa");
@@ -81,17 +81,35 @@ describe("GetHoldUseCase", () => {
       now: new Date("2026-01-01T09:00:00.000Z"),
       ttlMs: TTL_MS,
     });
-    const storeThatForgotToExpire: HoldStore = {
-      find: async () => expired,
-      reserve: () => Promise.reject(new Error("not in this test")),
-      release: () => Promise.reject(new Error("not in this test")),
-      availability: () => Promise.reject(new Error("not in this test")),
-    };
+    const storeThatForgotToExpire = stubHoldStore({ find: async () => expired });
 
     const result = await new GetHoldUseCase(storeThatForgotToExpire, clock).execute({
       token: TOKEN,
     });
 
     expect(result).toEqual({ ok: false, reason: "not-found" });
+  });
+
+  it("reads the clock after the lookup, so it never overstates the time left", async () => {
+    // A slow store: the second it spends answering must come off the
+    // countdown the client is told, not be hidden by a clock read too early.
+    const clock = new FakeClock("2026-01-01T10:00:00.000Z");
+    const hold = Hold.create({
+      token: TOKEN,
+      tierId: TIER,
+      qty: Quantity.of(1),
+      now: clock.now(),
+      ttlMs: TTL_MS,
+    });
+    const slowStore = stubHoldStore({
+      find: async () => {
+        clock.advance(1_000);
+        return hold;
+      },
+    });
+
+    const result = await new GetHoldUseCase(slowStore, clock).execute({ token: TOKEN });
+
+    expect(result).toEqual(expect.objectContaining({ ok: true, remainingMs: TTL_MS - 1_000 }));
   });
 });

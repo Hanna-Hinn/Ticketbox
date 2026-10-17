@@ -4,6 +4,7 @@ import { holdToken } from "../../../../src/domain/value-objects/HoldToken.js";
 import { tierId } from "../../../../src/domain/value-objects/Ids.js";
 import { FakeClock } from "../../../fakes/FakeClock.js";
 import { InMemoryHoldStore } from "../../../fakes/InMemoryHoldStore.js";
+import { stubHoldStore } from "../../../fakes/stubHoldStore.js";
 
 const TTL_MS = 120_000;
 const TIER = tierId("11111111-1111-4111-8111-aaaaaaaaaaaa");
@@ -69,6 +70,19 @@ describe("ReleaseHoldUseCase", () => {
 
     clock.advance(TTL_MS - 1);
     const result = await useCase.execute({ token: TOKEN });
+
+    expect(result).toEqual({ released: true, tierId: TIER, remaining: 10 });
+  });
+
+  it("releases with a single store call and no lookup first", async () => {
+    // A find followed by a release is two commands with a gap; the store's
+    // compare-and-restore is the one place the decision may be made. A store
+    // that rejects every read proves the use case never asks for one.
+    const store = stubHoldStore({
+      release: async () => ({ released: true, tierId: TIER, remaining: 10 }),
+    });
+
+    const result = await new ReleaseHoldUseCase(store).execute({ token: TOKEN });
 
     expect(result).toEqual({ released: true, tierId: TIER, remaining: 10 });
   });
