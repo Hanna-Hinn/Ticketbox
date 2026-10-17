@@ -24,19 +24,25 @@ export class Order {
   readonly holdToken: HoldToken;
   readonly email: string;
   readonly items: readonly OrderItem[];
-  readonly createdAt: Date;
+  private readonly createdAtMs: number;
 
   private constructor(props: OrderProps) {
     this.id = props.id;
     this.holdToken = props.holdToken;
     this.email = props.email;
-    this.items = props.items;
-    this.createdAt = props.createdAt;
+    // A copy, frozen: the caller still holds the original array, and an
+    // order whose items grow after creation is an order whose total changes.
+    this.items = Object.freeze([...props.items]);
+    this.createdAtMs = props.createdAt.getTime();
   }
 
   static create(props: OrderProps): Order {
     if (props.items.length === 0) throw new InvalidOrder("an order needs at least one item");
     return new Order(props);
+  }
+
+  get createdAt(): Date {
+    return new Date(this.createdAtMs);
   }
 
   total(): Money {

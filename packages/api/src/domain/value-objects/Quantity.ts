@@ -9,7 +9,9 @@ export class Quantity {
 
   static of(value: number): Quantity {
     if (!Number.isInteger(value) || value < 1 || value > Quantity.MAX_PER_HOLD) {
-      throw new InvalidQuantity(value, Quantity.MAX_PER_HOLD);
+      throw new InvalidQuantity(
+        `quantity must be an integer between 1 and ${Quantity.MAX_PER_HOLD}, got ${value}`,
+      );
     }
     return new Quantity(value);
   }

@@ -80,6 +80,11 @@ Entities: `private constructor`, `static create(props)` that checks invariants a
 7. **Errors are one class per file, with only `name` set.** The handbook's folder listing shows one file per error. No `code` field or HTTP hint: the status mapping is TB-012's, and it will key on the class.
 8. **Time is `Date`.** Built in, no import, and what `Clock.now()` (TB-007) will return. Arithmetic goes through `getTime()` so a `Date` is never compared with `>=` directly.
 
+9. **Instants are stored as epoch milliseconds; `Date` getters mint a fresh object** _(added after Phase 3 review — Critical)_. `readonly expiresAt: Date` protects the reference, not the value: `hold.expiresAt.setTime(0)` would rewrite the hold's expiry from outside. `Hold`, `Event` and `Order` keep a private `number` and expose `Date` through getters. Arrays (`Event.tiers`, `Order.items`) are copied and frozen for the same reason — `readonly T[]` is a type, and the caller still holds the original array.
+10. **`isSafeInteger`, not `isInteger`, in `Money` and `Hold.ttlMs`; `add`/`times` go through `fromCents`** _(review — Major)_. Above 2^53 an "integer" is already rounded, which is the only way integer arithmetic goes wrong in JavaScript; and `ttlMs: 1e300` passed `isInteger` and produced a hold whose expiry was `NaN` — immortal, the exact failure this project warns about with `SET` without `EX`. An invalid `Date` given to `create`, `isExpired` or `remainingMs` throws `InvalidHold` rather than silently reading as "not expired".
+11. **`Event.create` rejects a tier whose `eventId` is not the event's** _(review — Major; plan change: adds `errors/InvalidEvent.ts`)_. The model carries both `TicketTier.eventId` and `Event.tiers`; a cross-check is one line and catches exactly the "tier where an event belongs" bug the brands exist for.
+12. **All error classes take a message; the message is written at the throw site** _(review — Minor)_. `InvalidMoney(1.5)` thrown from `times` used to say "cents", when 1.5 was the multiplier.
+
 ---
 
 ## 4. Files
