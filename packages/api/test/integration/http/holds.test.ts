@@ -14,7 +14,12 @@ import { FixedTokenGenerator } from "../../fakes/FixedTokenGenerator.js";
 import { InMemoryEventRepository } from "../../fakes/InMemoryEventRepository.js";
 import { InMemoryHoldRepository } from "../../fakes/InMemoryHoldRepository.js";
 import { InMemoryHoldStore } from "../../fakes/InMemoryHoldStore.js";
-import { unusedAdminController, unusedEventController, unusedStatsController } from "./support.js";
+import {
+  unusedAdminController,
+  unusedEventController,
+  unusedOrderController,
+  unusedStatsController,
+} from "./support.js";
 
 // The routes, the controller and the use cases over the in-memory world: no
 // engine opened. The scripts behind the real store have their own tests.
@@ -42,6 +47,7 @@ function server(remaining = 10): {
   app = buildServer({
     logger: pino({ level: "silent" }),
     events: unusedEventController(),
+    orders: unusedOrderController(),
     holds: new HoldController(
       new CreateHoldUseCase(
         events,

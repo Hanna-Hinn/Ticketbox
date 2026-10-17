@@ -59,4 +59,12 @@ export interface HoldStore {
 
   /** Restore an expired hold's quantity exactly once (TB-026). */
   sweep(hold: ExpiredHold, now: Date): Promise<SweepResult>;
+
+  /**
+   * Take the hold out of the store for good — sold, not released: nothing is
+   * restored (TB-029). false: there was nothing to consume (expired,
+   * released, already confirmed; the store cannot tell which and the caller
+   * does not need to).
+   */
+  consume(token: HoldToken): Promise<boolean>;
 }

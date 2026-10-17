@@ -8,6 +8,7 @@ const LUA_DIR = new URL("../../../../../scripts/lua/", import.meta.url);
 export const CREATE_HOLD_LUA = readFileSync(new URL("create_hold.lua", LUA_DIR), "utf8");
 export const RELEASE_HOLD_LUA = readFileSync(new URL("release_hold.lua", LUA_DIR), "utf8");
 export const SWEEP_HOLD_LUA = readFileSync(new URL("sweep_hold.lua", LUA_DIR), "utf8");
+export const CONSUME_HOLD_LUA = readFileSync(new URL("consume_hold.lua", LUA_DIR), "utf8");
 
 // ioredis adds a defined command to the client at runtime only. Its
 // RedisCommander interface is left open for exactly this augmentation; the
@@ -44,6 +45,12 @@ declare module "ioredis" {
       qty: number,
       nowMs: number,
     ): Result<number, Context>;
+    consumeHold(
+      holdKey: string,
+      tierHoldsKey: string,
+      token: string,
+      tierId: string,
+    ): Result<number, Context>;
   }
 }
 
@@ -54,4 +61,5 @@ export function defineHoldScripts(redis: Redis): void {
   redis.defineCommand("createHold", { numberOfKeys: 3, lua: CREATE_HOLD_LUA });
   redis.defineCommand("releaseHold", { numberOfKeys: 3, lua: RELEASE_HOLD_LUA });
   redis.defineCommand("sweepHold", { numberOfKeys: 3, lua: SWEEP_HOLD_LUA });
+  redis.defineCommand("consumeHold", { numberOfKeys: 2, lua: CONSUME_HOLD_LUA });
 }

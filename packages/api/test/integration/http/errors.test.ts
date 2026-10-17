@@ -7,7 +7,12 @@ import { ListUpcomingEventsUseCase } from "../../../src/application/use-cases/Li
 import { InvalidQuantity } from "../../../src/domain/errors/InvalidQuantity.js";
 import { TierNotFound } from "../../../src/domain/errors/TierNotFound.js";
 import { EventController } from "../../../src/presentation/http/controllers/EventController.js";
-import { unusedAdminController, unusedHoldController, unusedStatsController } from "./support.js";
+import {
+  unusedAdminController,
+  unusedHoldController,
+  unusedOrderController,
+  unusedStatsController,
+} from "./support.js";
 import { buildServer } from "../../../src/presentation/http/server.js";
 import { FakeClock } from "../../fakes/FakeClock.js";
 import { InMemoryEventRepository } from "../../fakes/InMemoryEventRepository.js";
@@ -32,6 +37,7 @@ beforeAll(async () => {
     stats: unusedStatsController(),
     admin: unusedAdminController(),
     holds: unusedHoldController(),
+    orders: unusedOrderController(),
     logger: pino({ level: "info" }, sink),
     events: new EventController(
       new ListUpcomingEventsUseCase(noEvents, new FakeClock("2026-01-01T00:00:00.000Z")),

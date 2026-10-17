@@ -10,7 +10,12 @@ import { FakeClock } from "../../fakes/FakeClock.js";
 import { InMemoryEventRepository } from "../../fakes/InMemoryEventRepository.js";
 import { InMemoryHoldRepository } from "../../fakes/InMemoryHoldRepository.js";
 import { InMemoryHoldStore } from "../../fakes/InMemoryHoldStore.js";
-import { unusedEventController, unusedHoldController, unusedStatsController } from "./support.js";
+import {
+  unusedEventController,
+  unusedHoldController,
+  unusedOrderController,
+  unusedStatsController,
+} from "./support.js";
 
 // The route and the controller over fakes: one seeded event with one tier
 // of 10, a store that says 7. The real engines are main/composition.test.ts.
@@ -31,6 +36,7 @@ function server(): FastifyInstance {
     logger: pino({ level: "silent" }),
     events: unusedEventController(),
     holds: unusedHoldController(),
+    orders: unusedOrderController(),
     stats: unusedStatsController(),
     admin: new AdminController(
       new ReconcileEventUseCase(events, store, new InMemoryHoldRepository()),

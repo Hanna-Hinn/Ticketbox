@@ -3,11 +3,13 @@ import Fastify, { type FastifyBaseLogger, type FastifyInstance } from "fastify";
 import { serializerCompiler, validatorCompiler } from "fastify-type-provider-zod";
 import type { EventController } from "./controllers/EventController.js";
 import type { HoldController } from "./controllers/HoldController.js";
+import type { OrderController } from "./controllers/OrderController.js";
 import type { AdminController } from "./controllers/AdminController.js";
 import type { StatsController } from "./controllers/StatsController.js";
 import { registerErrorHandling } from "./errors.js";
 import { registerEventRoutes } from "./routes/events.js";
 import { registerHoldRoutes } from "./routes/holds.js";
+import { registerOrderRoutes } from "./routes/orders.js";
 import { registerAdminRoutes } from "./routes/admin.js";
 import { registerStatsRoutes } from "./routes/stats.js";
 import {
@@ -20,6 +22,7 @@ export interface ServerDeps {
   readonly logger: FastifyBaseLogger;
   readonly events: EventController;
   readonly holds: HoldController;
+  readonly orders: OrderController;
   readonly stats: StatsController;
   readonly admin: AdminController;
   readonly checks: DependencyChecks;
@@ -61,6 +64,7 @@ export function buildServer(deps: ServerDeps): FastifyInstance {
   registerErrorHandling(app);
   registerEventRoutes(app, deps.events);
   registerHoldRoutes(app, deps.holds);
+  registerOrderRoutes(app, deps.orders);
   registerStatsRoutes(app, deps.stats);
   registerAdminRoutes(app, deps.admin);
   registerHealthRoutes(app, deps.checks, deps.healthCheckTimeoutMs ?? DEFAULT_CHECK_TIMEOUT_MS);

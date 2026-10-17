@@ -1,3 +1,4 @@
+import { ConfirmOrderUseCase } from "../../../src/application/use-cases/ConfirmOrder.js";
 import { CreateHoldUseCase } from "../../../src/application/use-cases/CreateHold.js";
 import { GetCacheStatsUseCase } from "../../../src/application/use-cases/GetCacheStats.js";
 import { GetEventAvailabilityUseCase } from "../../../src/application/use-cases/GetEventAvailability.js";
@@ -8,6 +9,7 @@ import { ReleaseHoldUseCase } from "../../../src/application/use-cases/ReleaseHo
 import { AdminController } from "../../../src/presentation/http/controllers/AdminController.js";
 import { EventController } from "../../../src/presentation/http/controllers/EventController.js";
 import { HoldController } from "../../../src/presentation/http/controllers/HoldController.js";
+import { OrderController } from "../../../src/presentation/http/controllers/OrderController.js";
 import { StatsController } from "../../../src/presentation/http/controllers/StatsController.js";
 import { FakeClock } from "../../fakes/FakeClock.js";
 import { FixedTokenGenerator } from "../../fakes/FixedTokenGenerator.js";
@@ -15,6 +17,7 @@ import { InMemoryCacheStats } from "../../fakes/InMemoryCacheStats.js";
 import { InMemoryEventRepository } from "../../fakes/InMemoryEventRepository.js";
 import { InMemoryHoldRepository } from "../../fakes/InMemoryHoldRepository.js";
 import { InMemoryHoldStore } from "../../fakes/InMemoryHoldStore.js";
+import { InMemoryOrderRepository } from "../../fakes/InMemoryOrderRepository.js";
 
 // A route test exercises one controller; the server still needs the other
 // two. These are the controllers over empty fakes that nothing calls.
@@ -52,6 +55,20 @@ export function unusedAdminController(): AdminController {
       new InMemoryEventRepository([]),
       new InMemoryHoldStore(new FakeClock(START)),
       new InMemoryHoldRepository(),
+    ),
+  );
+}
+
+export function unusedOrderController(): OrderController {
+  const clock = new FakeClock(START);
+  const mirror = new InMemoryHoldRepository();
+  return new OrderController(
+    new ConfirmOrderUseCase(
+      new InMemoryEventRepository([]),
+      new InMemoryHoldStore(clock),
+      new InMemoryOrderRepository(mirror),
+      clock,
+      new FixedTokenGenerator([]),
     ),
   );
 }

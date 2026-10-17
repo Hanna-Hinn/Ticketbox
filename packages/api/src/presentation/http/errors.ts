@@ -2,7 +2,9 @@ import type { FastifyInstance } from "fastify";
 import { hasZodFastifySchemaValidationErrors } from "fastify-type-provider-zod";
 import { DomainError } from "../../domain/errors/DomainError.js";
 import { EventNotFound } from "../../domain/errors/EventNotFound.js";
+import { HoldGone } from "../../domain/errors/HoldGone.js";
 import { HoldNotFound } from "../../domain/errors/HoldNotFound.js";
+import { IdempotencyKeyReused } from "../../domain/errors/IdempotencyKeyReused.js";
 import { InsufficientInventory } from "../../domain/errors/InsufficientInventory.js";
 import { TierNotFound } from "../../domain/errors/TierNotFound.js";
 import type { ErrorDto } from "../dto/errors.js";
@@ -21,6 +23,10 @@ const STATUS_OF: ReadonlyMap<unknown, { status: number; code: string }> = new Ma
   [HoldNotFound, { status: 404, code: "NOT_FOUND" }],
   // 409: the request was well-formed and the tier exists; the state refused it.
   [InsufficientInventory, { status: 409, code: "INSUFFICIENT" }],
+  // 410: the hold existed and will not again (TB-029) — not a 404, which
+  // would say "never heard of it" to someone holding a token we issued.
+  [HoldGone, { status: 410, code: "GONE" }],
+  [IdempotencyKeyReused, { status: 409, code: "CONFLICT" }],
 ]);
 
 function envelope(code: string, message: string): ErrorDto {

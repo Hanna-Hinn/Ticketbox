@@ -16,6 +16,7 @@ const MIGRATION_FILES = [
   "004_orders.sql",
   "005_order_items.sql",
   "006_availability_indexes.sql",
+  "007_orders_idempotency_key.sql",
 ];
 
 let client: pg.Client;
