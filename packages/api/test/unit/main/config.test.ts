@@ -31,7 +31,17 @@ describe("loadConfig", () => {
       DATABASE_URL: validEnv.DATABASE_URL,
       REDIS_URL: validEnv.REDIS_URL,
       PORT: 4000,
+      LOG_LEVEL: "info",
     });
+  });
+
+  it("defaults LOG_LEVEL to info and accepts a pino level", () => {
+    expect(loadConfig(validEnv).LOG_LEVEL).toBe("info");
+    expect(loadConfig({ ...validEnv, LOG_LEVEL: "debug" }).LOG_LEVEL).toBe("debug");
+  });
+
+  it("throws when LOG_LEVEL is not a pino level", () => {
+    expect(() => loadConfig({ ...validEnv, LOG_LEVEL: "loud" })).toThrowError(/LOG_LEVEL/);
   });
 
   it("defaults PORT to 3000 when it's omitted", () => {
