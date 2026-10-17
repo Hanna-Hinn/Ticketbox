@@ -14,15 +14,6 @@ export function registerEventRoutes(app: FastifyInstance, events: EventControlle
   routes.get(
     "/events/:id",
     { schema: { params: EventIdParams, response: { 200: EventResponse, 404: ErrorResponse } } },
-    async (request, reply) => {
-      const dto = await events.get(request.params.id);
-      // HTTP mapping, not a domain rule. TB-012's error handler takes this over.
-      if (dto === null) {
-        return reply
-          .code(404)
-          .send({ error: { code: "NOT_FOUND", message: `event ${request.params.id} not found` } });
-      }
-      return dto;
-    },
+    async (request) => events.get(request.params.id),
   );
 }

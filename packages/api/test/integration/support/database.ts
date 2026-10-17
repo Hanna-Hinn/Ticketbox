@@ -10,7 +10,7 @@ function devDatabaseUrl(): string {
   return process.env.DATABASE_URL ?? DEFAULT_DATABASE_URL;
 }
 
-function testDatabaseUrl(): string {
+export function testDatabaseUrl(): string {
   const url = new URL(devDatabaseUrl());
   url.pathname = `/${TEST_DATABASE}`;
   return url.toString();

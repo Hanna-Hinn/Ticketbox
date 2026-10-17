@@ -13,6 +13,7 @@
     "build": "pnpm -r --if-present run build",
     "migrate": "pnpm --filter @ticketbox/api migrate",
     "seed": "pnpm --filter @ticketbox/api seed",
+    "dev:api": "pnpm --filter @ticketbox/api dev",
     "test:unit": "pnpm -r --if-present run test:unit",
     "test:integration": "pnpm -r --if-present run test:integration",
     "prepare": "husky"
