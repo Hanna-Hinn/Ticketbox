@@ -45,11 +45,17 @@ export function compose(config: Config): System {
   };
   const app = buildServer({ logger: log, events: controller, checks });
 
+  // Memoised: pool.end() throws if called twice, and a supervisor's
+  // SIGINT-then-SIGTERM is two calls.
+  let closing: Promise<void> | undefined;
   return {
     app,
-    close: async () => {
-      await app.close();
-      await pool.end();
+    close: () => {
+      closing ??= (async () => {
+        await app.close();
+        await pool.end();
+      })();
+      return closing;
     },
   };
 }

@@ -3,19 +3,12 @@ import { config } from "./config.js";
 
 const system = compose(config);
 
-// Memoised: a supervisor's SIGINT-then-SIGTERM must not end the pool twice,
-// and a failed close is a logged line, never an unhandled rejection.
-let closing: Promise<void> | undefined;
-function shutdown(signal: NodeJS.Signals): Promise<void> {
-  closing ??= (async () => {
-    system.app.log.info({ signal }, "shutting down");
-    await system.close();
-  })();
-  return closing;
-}
+// system.close() is idempotent, so SIGINT-then-SIGTERM is safe; a failed
+// close is a logged line, never an unhandled rejection.
 for (const signal of ["SIGTERM", "SIGINT"] as const) {
   process.on(signal, () => {
-    shutdown(signal).catch((err: unknown) => {
+    system.app.log.info({ signal }, "shutting down");
+    system.close().catch((err: unknown) => {
       system.app.log.error({ err }, "shutdown failed");
       process.exitCode = 1;
     });
