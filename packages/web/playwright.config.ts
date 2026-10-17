@@ -6,6 +6,10 @@ import { defineConfig } from "@playwright/test";
 // there, the "command" below fails fast and says which one, rather than
 // booting a second stack against the wrong database. The API is checked
 // through the web app's proxy, the only path the browser will use.
+// E2E-3 (TB-028a) also needs the sweeper worker (pnpm dev:worker), which has
+// no port to check; its absence shows up as that spec's own failure message.
+// CI starts the API with HOLD_TTL_MS=8000 so the expiry journey takes
+// seconds; the specs ask the server how long a hold has rather than assume.
 const WEB_URL = process.env.E2E_WEB_URL ?? "http://localhost:5173";
 
 function notAnswering(what: string, url: string, how: string): string {

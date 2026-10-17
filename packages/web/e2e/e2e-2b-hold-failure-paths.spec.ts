@@ -50,7 +50,7 @@ test("a browser clock that jumps ahead asks the server once, then counts from it
   // not have.
   await page.clock.install({ time: Date.now() });
   const held = await holdOneGeneral(page);
-  await expect(page.getByTestId("countdown")).toHaveText(/^1:5\d$/);
+  await expect(page.getByTestId("countdown")).toHaveText(/^\d+:\d\d$/);
   const reads = countHoldReads(page, held);
 
   // The browser's clock jumps ten minutes ahead; the hold is alive on the
@@ -61,7 +61,9 @@ test("a browser clock that jumps ahead asks the server once, then counts from it
   await page.clock.runFor(3_000);
 
   await expect.poll(reads).toBe(1);
-  await expect(page.getByTestId("countdown")).toHaveText(/^1:5\d$/);
+  // Remounted from the server's answer: a timer again, not 0:00.
+  await expect(page.getByTestId("countdown")).toHaveText(/^\d+:\d\d$/);
+  await expect(page.getByTestId("countdown")).not.toHaveText("0:00");
   await page.clock.runFor(3_000);
   await settle(page);
   expect(reads()).toBe(1);
@@ -71,7 +73,7 @@ test("a browser clock that jumps ahead asks the server once, then counts from it
 test("at zero the page asks the server once and shows what it says", async ({ page, request }) => {
   await page.clock.install({ time: Date.now() });
   const held = await holdOneGeneral(page);
-  await expect(page.getByTestId("countdown")).toHaveText(/^1:5\d$/);
+  await expect(page.getByTestId("countdown")).toHaveText(/^\d+:\d\d$/);
   const reads = countHoldReads(page, held);
 
   // The hold is released behind the page's back, then the browser reaches

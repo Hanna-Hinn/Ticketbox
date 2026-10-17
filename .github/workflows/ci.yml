@@ -62,12 +62,17 @@ jobs:
       - run: pnpm migrate
       - run: pnpm seed
       - run: pnpm test:integration
-      # Smoke and E2E need the API and the web app themselves. Both run in
-      # the background against the same stack and seed; /health and the web
-      # root gate the suites so a slow boot is a wait, not a red run. The
-      # logs are printed if anything fails.
+      # Smoke and E2E need the API, the web app and (E2E-3) the sweeper
+      # worker. All run in the background against the same stack and seed;
+      # /health and the web root gate the suites so a slow boot is a wait,
+      # not a red run. The worker has no port; E2E-3's own message names it
+      # if it is missing. HOLD_TTL_MS=8000 is the test-only short TTL
+      # (TB-028a): the expiry journey takes seconds instead of two minutes,
+      # and no spec assumes the number. The logs are printed if anything
+      # fails.
       - run: |
-          pnpm --filter @ticketbox/api exec tsx src/main/server.ts > api.log 2>&1 &
+          HOLD_TTL_MS=8000 pnpm --filter @ticketbox/api exec tsx src/main/server.ts > api.log 2>&1 &
+          HOLD_TTL_MS=8000 pnpm --filter @ticketbox/api exec tsx src/worker/sweeper.ts > worker.log 2>&1 &
           pnpm --filter @ticketbox/web exec vite --port 5173 --strictPort > web.log 2>&1 &
           for i in $(seq 1 30); do
             curl -sf http://localhost:3000/health && curl -sf http://localhost:5173/ > /dev/null && break
@@ -81,6 +86,7 @@ jobs:
         run: |
           docker compose logs
           cat api.log
+          cat worker.log
           cat web.log
       - if: failure()
         uses: actions/upload-artifact@v4

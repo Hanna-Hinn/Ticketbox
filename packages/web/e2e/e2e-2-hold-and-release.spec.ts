@@ -3,7 +3,8 @@ import { expect, test, type Page } from "@playwright/test";
 // Handbook §4.1 E2E-2, the part that exists before orders: get tickets, land
 // on checkout, see a timer counting down, release, and see the number come
 // back. Runs against the seeded stack: General has 1000 of 1000 and the
-// seed wrote the live counters (TB-025), so the hold is real.
+// seed wrote the live counters (TB-025), so the hold is real. Nothing here
+// assumes how long a hold lives: CI runs the API with HOLD_TTL_MS=8000.
 const JAZZ_ID = "11111111-1111-4111-8111-111111111111";
 // toHaveURL matches the whole URL, origin included; anchor the path at its end.
 const CHECKOUT = /\/checkout\/([0-9a-f-]{36})$/;
@@ -42,7 +43,10 @@ test("get two tickets, watch the countdown, release, see the number come back", 
 
   await landOnCheckout(page);
   const countdown = page.getByTestId("countdown");
-  await expect(countdown).toHaveText(/^1:5\d$/);
+  // The stack decides the TTL (120 s for dev, shorter in CI); the spec asks
+  // only for a timer that reads m:ss, is not already over, and moves.
+  await expect(countdown).toHaveText(/^\d+:\d\d$/);
+  await expect(countdown).not.toHaveText("0:00");
   const first = await countdown.textContent();
   await expect(countdown).not.toHaveText(first ?? "");
   await expect(page.getByTestId("summary")).toContainText("Rooftop Jazz Night");
