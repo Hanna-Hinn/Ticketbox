@@ -19,7 +19,7 @@ import { InMemoryHoldStore } from "../../fakes/InMemoryHoldStore.js";
 // The route, the controller and the use case over the in-memory store: no
 // engine opened. The script behind the real store has its own tests.
 const TIER = tierId("11111111-1111-4111-8111-aaaaaaaaaaaa");
-const TOKEN = "7b0b2f5e-6c1d-4e4a-9a9b-1d2e3f4a5b6c";
+const TOKEN = "11111111-1111-4111-8111-aaaaaaaaaaa1";
 const ok = (): Promise<void> => Promise.resolve();
 const noEvents = new InMemoryEventRepository([]);
 const unusedEvents = new EventController(
