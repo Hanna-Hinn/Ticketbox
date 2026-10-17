@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import type { FastifyInstance } from "fastify";
 import pino from "pino";
 import { afterEach, describe, expect, it } from "vitest";
@@ -14,6 +15,7 @@ import { FixedTokenGenerator } from "../../fakes/FixedTokenGenerator.js";
 import { InMemoryEventRepository } from "../../fakes/InMemoryEventRepository.js";
 import { InMemoryHoldRepository } from "../../fakes/InMemoryHoldRepository.js";
 import { InMemoryHoldStore } from "../../fakes/InMemoryHoldStore.js";
+import { InMemoryIdempotencyStore } from "../../fakes/InMemoryIdempotencyStore.js";
 import { InMemoryOrderRepository } from "../../fakes/InMemoryOrderRepository.js";
 import {
   unusedAdminController,
@@ -37,6 +39,7 @@ async function server(): Promise<{
   app: FastifyInstance;
   store: InMemoryHoldStore;
   orders: InMemoryOrderRepository;
+  idempotency: InMemoryIdempotencyStore;
 }> {
   const clock = new FakeClock("2026-01-01T10:00:00.000Z");
   const events = new InMemoryEventRepository([
@@ -59,6 +62,7 @@ async function server(): Promise<{
   await create.execute({ eventId: DEFAULT_EVENT_ID, tierId: TIER, qty: 2 });
   clock.advance(30_000);
   const orders = new InMemoryOrderRepository(mirror);
+  const idempotency = new InMemoryIdempotencyStore();
   lines = [];
   app = buildServer({
     logger: pino({ level: "info" }, { write: (line: string) => void lines.push(line) }),
@@ -78,9 +82,25 @@ async function server(): Promise<{
         ]),
       ),
     ),
+    idempotency,
     checks: { postgres: ok, redis: ok },
   });
-  return { app, store, orders };
+  return { app, store, orders, idempotency };
+}
+
+// Every request carries a key (the schema requires it); a fresh one unless
+// the test is about reusing it.
+function post(
+  app: FastifyInstance,
+  payload: Record<string, string>,
+  key: string = randomUUID(),
+): Promise<{ statusCode: number; headers: Record<string, unknown>; json<T = unknown>(): T }> {
+  return app.inject({
+    method: "POST",
+    url: "/orders",
+    headers: { "idempotency-key": key },
+    payload,
+  });
 }
 
 afterEach(async () => {
@@ -91,9 +111,9 @@ const body = { holdToken: HELD, email: "hanna@example.com" };
 
 describe("POST /orders", () => {
   it("answers 201 with the order: the total, the items at the tier's price, the instant", async () => {
-    const { app, orders } = await server();
+    const { app } = await server();
 
-    const response = await app.inject({ method: "POST", url: "/orders", payload: body });
+    const response = await post(app, body);
 
     expect(response.statusCode).toBe(201);
     expect(response.json()).toEqual({
@@ -104,20 +124,12 @@ describe("POST /orders", () => {
       items: [{ tierId: TIER, qty: 2, unitPriceCents: 2000 }],
       createdAt: "2026-01-01T10:00:30.000Z",
     });
-    expect(
-      orders.saved(orderId("22222222-2222-4222-8222-000000000001"))?.idempotencyKey,
-    ).toBeNull();
   });
 
-  it("carries the Idempotency-Key header into the order when the client sends one", async () => {
+  it("carries the Idempotency-Key header into the order", async () => {
     const { app, orders } = await server();
 
-    const response = await app.inject({
-      method: "POST",
-      url: "/orders",
-      headers: { "idempotency-key": "client-key-1" },
-      payload: body,
-    });
+    const response = await post(app, body, "client-key-1");
 
     expect(response.statusCode).toBe(201);
     expect(orders.saved(orderId("22222222-2222-4222-8222-000000000001"))?.idempotencyKey).toBe(
@@ -128,10 +140,9 @@ describe("POST /orders", () => {
   it("answers 410 GONE, not 404, for a token with no hold behind it", async () => {
     const { app } = await server();
 
-    const response = await app.inject({
-      method: "POST",
-      url: "/orders",
-      payload: { ...body, holdToken: "11111111-1111-4111-8111-aaaaaaaaaaa9" },
+    const response = await post(app, {
+      ...body,
+      holdToken: "11111111-1111-4111-8111-aaaaaaaaaaa9",
     });
 
     expect(response.statusCode).toBe(410);
@@ -141,31 +152,24 @@ describe("POST /orders", () => {
   it("answers 410 for the second confirm of the same hold, with one order", async () => {
     const { app, orders } = await server();
 
-    const first = await app.inject({ method: "POST", url: "/orders", payload: body });
-    const second = await app.inject({ method: "POST", url: "/orders", payload: body });
+    const first = await post(app, body);
+    const second = await post(app, body);
 
     expect(first.statusCode).toBe(201);
     expect(second.statusCode).toBe(410);
     expect(orders.size).toBe(1);
   });
 
-  it("answers 409 CONFLICT for a reused key on a different hold — and that hold is gone, with no order", async () => {
-    // The window ADR 0007 names and TB-030 closes: the consume happened,
-    // the constraint refused the order. Pinned so TB-030 has a red test.
-    const { app, store, orders } = await server();
-    await app.inject({
-      method: "POST",
-      url: "/orders",
-      headers: { "idempotency-key": "k" },
-      payload: body,
-    });
+  it("answers 409 CONFLICT from the constraint for a reused key on a different hold when the Redis layer has forgotten the key — and that hold is gone, with no order", async () => {
+    // The window ADR 0007 names, and the Redis layer (TB-030) normally
+    // closes with a 422 before any use case runs. Bypassed here — the key
+    // dropped, as an eviction or a FLUSHDB would — the constraint is the
+    // truth behind it: the consume happened, the order was refused.
+    const { app, store, orders, idempotency } = await server();
+    await post(app, body, "k");
+    await idempotency.abandon("k");
 
-    const reused = await app.inject({
-      method: "POST",
-      url: "/orders",
-      headers: { "idempotency-key": "k" },
-      payload: { ...body, holdToken: OTHER_HELD },
-    });
+    const reused = await post(app, { ...body, holdToken: OTHER_HELD }, "k");
 
     expect(reused.statusCode).toBe(409);
     expect(reused.json<ErrorDto>()).toMatchObject({ error: { code: "CONFLICT" } });
@@ -174,9 +178,10 @@ describe("POST /orders", () => {
   });
 
   it.each([
-    ["a malformed token", { ...body, holdToken: "nope" }, {}],
-    ["an address that is not an email", { ...body, email: "hanna" }, {}],
+    ["a malformed token", { ...body, holdToken: "nope" }, { "idempotency-key": "k" }],
+    ["an address that is not an email", { ...body, email: "hanna" }, { "idempotency-key": "k" }],
     ["a key over 200 characters", body, { "idempotency-key": "k".repeat(201) }],
+    ["a missing key", body, {}],
   ])("answers 400 VALIDATION for %s, before any use case runs", async (_what, payload, headers) => {
     const { app, orders } = await server();
 
@@ -190,12 +195,7 @@ describe("POST /orders", () => {
   it("logs neither the email nor the idempotency key at info", async () => {
     const { app } = await server();
 
-    await app.inject({
-      method: "POST",
-      url: "/orders",
-      headers: { "idempotency-key": "secret-key-value" },
-      payload: body,
-    });
+    await post(app, body, "secret-key-value");
 
     expect(lines.length).toBeGreaterThan(0);
     expect(lines.join("\n")).not.toContain("hanna@example.com");

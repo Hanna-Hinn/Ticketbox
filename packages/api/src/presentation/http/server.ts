@@ -4,9 +4,11 @@ import { serializerCompiler, validatorCompiler } from "fastify-type-provider-zod
 import type { EventController } from "./controllers/EventController.js";
 import type { HoldController } from "./controllers/HoldController.js";
 import type { OrderController } from "./controllers/OrderController.js";
+import type { IdempotencyStore } from "../../application/ports/IdempotencyStore.js";
 import type { AdminController } from "./controllers/AdminController.js";
 import type { StatsController } from "./controllers/StatsController.js";
 import { registerErrorHandling } from "./errors.js";
+import { idempotencyHooks } from "./idempotency.js";
 import { registerEventRoutes } from "./routes/events.js";
 import { registerHoldRoutes } from "./routes/holds.js";
 import { registerOrderRoutes } from "./routes/orders.js";
@@ -23,6 +25,7 @@ export interface ServerDeps {
   readonly events: EventController;
   readonly holds: HoldController;
   readonly orders: OrderController;
+  readonly idempotency: IdempotencyStore;
   readonly stats: StatsController;
   readonly admin: AdminController;
   readonly checks: DependencyChecks;
@@ -64,7 +67,7 @@ export function buildServer(deps: ServerDeps): FastifyInstance {
   registerErrorHandling(app);
   registerEventRoutes(app, deps.events);
   registerHoldRoutes(app, deps.holds);
-  registerOrderRoutes(app, deps.orders);
+  registerOrderRoutes(app, deps.orders, idempotencyHooks(deps.idempotency));
   registerStatsRoutes(app, deps.stats);
   registerAdminRoutes(app, deps.admin);
   registerHealthRoutes(app, deps.checks, deps.healthCheckTimeoutMs ?? DEFAULT_CHECK_TIMEOUT_MS);

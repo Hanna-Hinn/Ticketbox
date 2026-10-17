@@ -2,6 +2,7 @@ import type { FastifyInstance } from "fastify";
 import pino from "pino";
 import { afterEach, describe, expect, it } from "vitest";
 import {
+  freshIdempotencyStore,
   unusedAdminController,
   unusedEventController,
   unusedHoldController,
@@ -22,6 +23,7 @@ function serverWith(checks: ServerDeps["checks"]): FastifyInstance {
     admin: unusedAdminController(),
     holds: unusedHoldController(),
     orders: unusedOrderController(),
+    idempotency: freshIdempotencyStore(),
     logger: pino({ level: "silent" }),
     events: unusedEventController(),
     checks,

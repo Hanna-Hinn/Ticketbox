@@ -13,7 +13,12 @@ import { EventController } from "../../../src/presentation/http/controllers/Even
 import { GetCacheStatsUseCase } from "../../../src/application/use-cases/GetCacheStats.js";
 import { StatsController } from "../../../src/presentation/http/controllers/StatsController.js";
 import { InMemoryCacheStats } from "../../fakes/InMemoryCacheStats.js";
-import { unusedAdminController, unusedHoldController, unusedOrderController } from "./support.js";
+import {
+  freshIdempotencyStore,
+  unusedAdminController,
+  unusedHoldController,
+  unusedOrderController,
+} from "./support.js";
 import { buildServer } from "../../../src/presentation/http/server.js";
 import { FakeClock } from "../../fakes/FakeClock.js";
 import { InMemoryHoldStore } from "../../fakes/InMemoryHoldStore.js";
@@ -48,6 +53,7 @@ beforeAll(async () => {
     admin: unusedAdminController(),
     holds: unusedHoldController(),
     orders: unusedOrderController(),
+    idempotency: freshIdempotencyStore(),
     logger: pino({ level: "silent" }),
     events: new EventController(new ListUpcomingEventsUseCase(repo, clock), getAvailability),
     checks: {},

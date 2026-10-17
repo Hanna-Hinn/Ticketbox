@@ -8,6 +8,7 @@ import { InvalidQuantity } from "../../../src/domain/errors/InvalidQuantity.js";
 import { TierNotFound } from "../../../src/domain/errors/TierNotFound.js";
 import { EventController } from "../../../src/presentation/http/controllers/EventController.js";
 import {
+  freshIdempotencyStore,
   unusedAdminController,
   unusedHoldController,
   unusedOrderController,
@@ -38,6 +39,7 @@ beforeAll(async () => {
     admin: unusedAdminController(),
     holds: unusedHoldController(),
     orders: unusedOrderController(),
+    idempotency: freshIdempotencyStore(),
     logger: pino({ level: "info" }, sink),
     events: new EventController(
       new ListUpcomingEventsUseCase(noEvents, new FakeClock("2026-01-01T00:00:00.000Z")),

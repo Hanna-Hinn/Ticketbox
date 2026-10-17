@@ -29,7 +29,7 @@ const STATUS_OF: ReadonlyMap<unknown, { status: number; code: string }> = new Ma
   [IdempotencyKeyReused, { status: 409, code: "CONFLICT" }],
 ]);
 
-function envelope(code: string, message: string): ErrorDto {
+export function envelope(code: string, message: string): ErrorDto {
   return { error: { code, message } };
 }
 

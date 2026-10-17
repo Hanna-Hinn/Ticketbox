@@ -1,5 +1,6 @@
 import { useState, type ReactNode } from "react";
 import type { HoldDto } from "@ticketbox/api/src/presentation/dto/holds.js";
+import type { OrderDto } from "@ticketbox/api/src/presentation/dto/orders.js";
 import { api, ApiError } from "../api/client.js";
 import { Countdown } from "../components/Countdown.js";
 import { Link } from "../components/Link.js";
@@ -13,6 +14,11 @@ import { formatPrice } from "../format.js";
 // browser would do about money, and the order (TB-029) will say the total.
 // A hold that is gone is an expected answer, carried as data (null), not
 // as an error message to parse.
+//
+// Confirm (TB-030) sends the email with one idempotency key, minted when the
+// page mounts and never changed: a double-click, a retry after a timeout, a
+// second submit — all the same request to the server, and one order. A new
+// key is a new page.
 export function CheckoutPage({ token }: { token: string }): ReactNode {
   const { state, retry } = useRequest(token, async (signal) => {
     let hold: HoldDto;
@@ -27,6 +33,27 @@ export function CheckoutPage({ token }: { token: string }): ReactNode {
   });
   const [releasing, setReleasing] = useState(false);
   const [releaseError, setReleaseError] = useState<string | undefined>(undefined);
+  const [idempotencyKey] = useState(() => crypto.randomUUID());
+  const [email, setEmail] = useState("");
+  const [confirming, setConfirming] = useState(false);
+  const [confirmError, setConfirmError] = useState<string | undefined>(undefined);
+  const [order, setOrder] = useState<OrderDto | undefined>(undefined);
+
+  // The order outlives the hold it consumed: once confirmed, the hold is
+  // gone from the server, and this page shows the order, not the gap.
+  if (order !== undefined) {
+    return (
+      <section data-testid="confirmed">
+        <h1>Order confirmed</h1>
+        <p data-testid="order-id">Order {order.orderId}</p>
+        <p data-testid="order-total">Total {formatPrice(order.totalCents)}</p>
+        <p>A confirmation goes to {order.email}.</p>
+        <p>
+          <Link to="/">All events</Link>
+        </p>
+      </section>
+    );
+  }
 
   if (state.status === "loading") return <Loading />;
   if (state.status === "error") return <ErrorMessage message={state.message} retry={retry} />;
@@ -57,6 +84,22 @@ export function CheckoutPage({ token }: { token: string }): ReactNode {
     }
   };
 
+  const confirm = async (): Promise<void> => {
+    setConfirming(true);
+    setConfirmError(undefined);
+    try {
+      setOrder(await api.createOrder({ holdToken: hold.token, email }, idempotencyKey));
+    } catch (err: unknown) {
+      // 410: the hold went while the form was open; the re-fetch shows that.
+      if (err instanceof ApiError && err.status === 410) {
+        retry();
+        return;
+      }
+      setConfirmError(err instanceof ApiError ? `${err.status} ${err.message}` : String(err));
+      setConfirming(false);
+    }
+  };
+
   return (
     <section>
       <h1>Your tickets are held</h1>
@@ -71,6 +114,33 @@ export function CheckoutPage({ token }: { token: string }): ReactNode {
           {hold.qty} × {formatPrice(tier.priceCents)}
         </dd>
       </dl>
+      <form
+        className="confirm-form"
+        onSubmit={(event) => {
+          event.preventDefault();
+          void confirm();
+        }}
+      >
+        <label>
+          Email{" "}
+          <input
+            type="email"
+            required
+            value={email}
+            onChange={(event) => setEmail(event.target.value)}
+            disabled={confirming}
+            data-testid="email"
+          />
+        </label>{" "}
+        <button type="submit" disabled={confirming} data-testid="confirm">
+          Confirm
+        </button>
+      </form>
+      {confirmError !== undefined && (
+        <p className="status error" role="alert" data-testid="confirm-error">
+          Could not confirm: {confirmError}
+        </p>
+      )}
       <p>
         <button
           type="button"

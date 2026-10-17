@@ -6,6 +6,7 @@ import type {
   HoldDto,
   ReleaseDto,
 } from "@ticketbox/api/src/presentation/dto/holds.js";
+import type { CreateOrderDto, OrderDto } from "@ticketbox/api/src/presentation/dto/orders.js";
 
 // The only file in packages/web that talks HTTP (enforced by lint). Response
 // types are the API's own DTOs, imported as types only: nothing of the API
@@ -31,6 +32,12 @@ export interface ApiClient {
   createHold(input: CreateHoldDto, signal?: AbortSignal): Promise<CreatedHoldDto>;
   getHold(token: string, signal?: AbortSignal): Promise<HoldDto>;
   releaseHold(token: string, signal?: AbortSignal): Promise<ReleaseDto>;
+  /** The key is the page's: the same key, the same request, the same order (TB-030). */
+  createOrder(
+    input: CreateOrderDto,
+    idempotencyKey: string,
+    signal?: AbortSignal,
+  ): Promise<OrderDto>;
 }
 
 type FetchFn = (input: string, init?: RequestInit) => Promise<Response>;
@@ -40,14 +47,17 @@ export function createApiClient(fetchFn: FetchFn = (input, init) => fetch(input,
   async function request<T>(
     path: string,
     signal: AbortSignal | undefined,
-    init: { method?: string; body?: unknown } = {},
+    init: { method?: string; body?: unknown; headers?: Record<string, string> } = {},
   ): Promise<T> {
     const response = await fetchFn(path, {
       method: init.method ?? "GET",
       signal: signal ?? null,
       ...(init.body === undefined
         ? {}
-        : { headers: { "content-type": "application/json" }, body: JSON.stringify(init.body) }),
+        : {
+            headers: { "content-type": "application/json", ...init.headers },
+            body: JSON.stringify(init.body),
+          }),
     });
     if (!response.ok) throw await toApiError(response);
     // The API's Zod serializer guarantees the shape on its side; the browser
@@ -63,6 +73,12 @@ export function createApiClient(fetchFn: FetchFn = (input, init) => fetch(input,
     getHold: (token, signal) => request<HoldDto>(`/api/holds/${encodeURIComponent(token)}`, signal),
     releaseHold: (token, signal) =>
       request<ReleaseDto>(`/api/holds/${encodeURIComponent(token)}`, signal, { method: "DELETE" }),
+    createOrder: (input, idempotencyKey, signal) =>
+      request<OrderDto>("/api/orders", signal, {
+        method: "POST",
+        body: input,
+        headers: { "idempotency-key": idempotencyKey },
+      }),
   };
 }
 

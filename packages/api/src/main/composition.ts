@@ -16,6 +16,7 @@ import { createPool } from "../infrastructure/postgres/pool.js";
 import { CachedEventRepository } from "../infrastructure/redis/CachedEventRepository.js";
 import { RedisCacheStats } from "../infrastructure/redis/RedisCacheStats.js";
 import { RedisHoldStore } from "../infrastructure/redis/RedisHoldStore.js";
+import { RedisIdempotencyStore } from "../infrastructure/redis/RedisIdempotencyStore.js";
 import { closeRedisClient, createRedisClient } from "../infrastructure/redis/client.js";
 import { SystemClock } from "../infrastructure/system/SystemClock.js";
 import { UuidTokenGenerator } from "../infrastructure/system/UuidTokenGenerator.js";
@@ -62,6 +63,9 @@ export function compose(config: Config): System {
   // (TB-022). The counters are written by `pnpm seed` (seedLiveCounters) for
   // dev and CI; rebuilding them from Postgres is reconciliation (TB-027).
   const holds = new RedisHoldStore(redis, log.child({ component: "hold-store" }));
+  // IdempotencyStore: the claim and the stored answer for POST /orders
+  // (TB-030); the constraint in Postgres is the truth behind it.
+  const idempotency = new RedisIdempotencyStore(redis, log.child({ component: "idempotency" }));
   // HoldRepository: the audit row, written after the store decides (TB-024).
   const holdMirror = new PgHoldRepository(pool);
   // OrderRepository: the order, its items and the hold's flip, one
@@ -109,6 +113,7 @@ export function compose(config: Config): System {
     events: controller,
     holds: holdController,
     orders: orderController,
+    idempotency,
     stats,
     admin,
     checks,

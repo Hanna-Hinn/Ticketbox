@@ -11,6 +11,7 @@ import { InMemoryEventRepository } from "../../fakes/InMemoryEventRepository.js"
 import { InMemoryHoldRepository } from "../../fakes/InMemoryHoldRepository.js";
 import { InMemoryHoldStore } from "../../fakes/InMemoryHoldStore.js";
 import {
+  freshIdempotencyStore,
   unusedEventController,
   unusedHoldController,
   unusedOrderController,
@@ -37,6 +38,7 @@ function server(): FastifyInstance {
     events: unusedEventController(),
     holds: unusedHoldController(),
     orders: unusedOrderController(),
+    idempotency: freshIdempotencyStore(),
     stats: unusedStatsController(),
     admin: new AdminController(
       new ReconcileEventUseCase(events, store, new InMemoryHoldRepository()),

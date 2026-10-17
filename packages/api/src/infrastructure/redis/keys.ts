@@ -32,6 +32,9 @@ export const keys = {
   eventCache: (id: EventId): string => `${KEY_PREFIX}cache:event:${id}`,
   // string: the single-flight mutex for one event's refresh, PX-bounded (TB-019)
   eventRefresh: (id: EventId): string => `${KEY_PREFIX}cache:event:${id}:refresh`,
+  // string: JSON, EX 86400 on every write — a request's claim, then its
+  // stored answer (TB-030). The key is the client's; bounded by the schema.
+  idempotency: (key: string): string => `${KEY_PREFIX}idem:${key}`,
   // integers, no TTL: INCR'd on every cache lookup (TB-019)
   cacheStats: {
     hits: `${KEY_PREFIX}cache:stats:hits`,
