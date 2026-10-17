@@ -187,6 +187,40 @@ describe("compose", () => {
     expect(response.json()).toMatchObject({ error: { code: "INTERNAL" } });
   });
 
+  it("sweeps an expired hold through the real stack: the counter is back, the row says expired", async () => {
+    const jazz = "11111111-1111-4111-8111-111111111111";
+    const general = tierId("11111111-1111-4111-8111-aaaaaaaaaaaa");
+    const created = await system.app.inject({
+      method: "POST",
+      url: "/holds",
+      payload: { eventId: jazz, tierId: general, qty: 3 },
+    });
+    const { token } = created.json<{ token: string }>();
+    // Time does not pass in a test: move the hold's expiry into the past
+    // the way two minutes would — the score, and the hash's TTL.
+    await redis.zadd(keys.tierHolds(general), Date.now() - 1, `${token}:3`);
+    await redis.pexpire(keys.hold(holdToken(token)), 1);
+    const deadline = Date.now() + 2_000;
+    while ((await redis.exists(keys.hold(holdToken(token)))) === 1 && Date.now() < deadline) {
+      await new Promise((resolve) => setTimeout(resolve, 5));
+    }
+
+    const result = await system.sweeper.execute();
+    const page = await system.app.inject({ url: `/events/${jazz}` });
+    const row = await db.query<{ status: string }>("SELECT status FROM holds WHERE token = $1", [
+      token,
+    ]);
+
+    expect(result).toEqual({ swept: 1, restored: 1, unmarked: [] });
+    expect(
+      page
+        .json<{ tiers: { id: string; remaining: number }[] }>()
+        .tiers.find((t) => t.id === general)?.remaining,
+    ).toBe(1000);
+    expect(row.rows[0]?.status).toBe("expired");
+    expect(await redis.zcard(keys.tierHolds(general))).toBe(0);
+  });
+
   it("refuses with 409 INSUFFICIENT when the live counter says no", async () => {
     const vip = "11111111-1111-4111-8111-cccccccccccc";
 

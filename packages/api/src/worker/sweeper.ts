@@ -1,6 +1,7 @@
 import { compose } from "../main/composition.js";
 import { config } from "../main/config.js";
 import { runEvery } from "./runEvery.js";
+import { sweepOnce } from "./sweepOnce.js";
 
 // The expired-hold sweeper (TB-026): the same composition root as the API,
 // never listening, ticking the sweep every 5 s. Five seconds is the delivery
@@ -14,15 +15,7 @@ const log = system.app.log.child({ component: "sweeper" });
 
 const stop = runEvery(
   SWEEP_INTERVAL_MS,
-  async () => {
-    const result = await system.sweeper.execute();
-    if (result.swept > 0) log.info(result, "swept expired holds");
-    // Tickets are back; the row still says active. Reconciliation (TB-027)
-    // closes that; until then the token and the reason are in the log.
-    for (const { token, error } of result.unmarked) {
-      log.error({ token, err: error }, "expired hold swept but its row not marked");
-    }
-  },
+  () => sweepOnce(system.sweeper, log),
   (err: unknown) => log.error({ err }, "sweep failed; retrying next tick"),
 );
 log.info({ intervalMs: SWEEP_INTERVAL_MS }, "sweeper started");
