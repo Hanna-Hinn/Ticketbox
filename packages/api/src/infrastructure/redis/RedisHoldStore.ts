@@ -19,6 +19,7 @@ import { CACHE_COMMAND_DEADLINE_MS, within } from "./within.js";
 const INSUFFICIENT = -1;
 const NOTHING_TO_RELEASE = -1;
 const NOTHING_TO_SWEEP = -1;
+const NOTHING_TO_CONSUME = -1;
 const NO_COUNTER = -2;
 const NOT_EXPIRED = -3;
 
@@ -254,6 +255,26 @@ export class RedisHoldStore implements HoldStore, InventoryRepair {
       return { swept: true, restored: false };
     }
     return { swept: true, restored: true, remaining: left };
+  }
+
+  async consume(token: HoldToken): Promise<boolean> {
+    this.requireReady("consume");
+    // As release: one read for the tier the keys are named after, then the
+    // script's own EXISTS is the compare. A hold that goes between the two
+    // is "nothing to consume".
+    const tier = await within(
+      this.redis.hget(keys.hold(token), "tierId"),
+      HOLD_COMMAND_DEADLINE_MS,
+      "consume",
+    );
+    if (tier === null) return false;
+    const owner = tierId(tier);
+    const reply = await within(
+      this.redis.consumeHold(keys.hold(token), keys.tierHolds(owner), token, owner),
+      HOLD_COMMAND_DEADLINE_MS,
+      "consume",
+    );
+    return reply !== NOTHING_TO_CONSUME;
   }
 
   async held(tierId: TierId): Promise<readonly HeldEntry[]> {

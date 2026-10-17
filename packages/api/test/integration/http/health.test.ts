@@ -5,6 +5,7 @@ import {
   unusedAdminController,
   unusedEventController,
   unusedHoldController,
+  unusedOrderController,
   unusedStatsController,
 } from "./support.js";
 import { buildServer, type ServerDeps } from "../../../src/presentation/http/server.js";
@@ -20,6 +21,7 @@ function serverWith(checks: ServerDeps["checks"]): FastifyInstance {
     stats: unusedStatsController(),
     admin: unusedAdminController(),
     holds: unusedHoldController(),
+    orders: unusedOrderController(),
     logger: pino({ level: "silent" }),
     events: unusedEventController(),
     checks,

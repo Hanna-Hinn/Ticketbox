@@ -170,7 +170,7 @@ Reason about the countdown as a _decision made every second_, not as a number sh
 ## 8. Follow-ups left behind
 
 - [x] TB-026: the sweeper. Until it exists an abandoned hold's tickets come back only when something releases them — the E2E's `afterEach` is a stand-in, not a design. _Done; the `afterEach` stays, because CI does not run the worker and a failed spec should not wait two minutes._
-- [ ] TB-029: `Countdown` and `CheckoutPage` gain Confirm; the summary deliberately shows no total (qty × price is the first arithmetic about money the browser would do).
+- [ ] TB-030 (was TB-029, whose Scope line is the use case and the route): `Countdown` and `CheckoutPage` gain Confirm; the summary deliberately shows no total (qty × price is the first arithmetic about money the browser would do).
 - [ ] TB-030: idempotent `POST /holds` — the double click above.
 - [ ] TB-038: the countdown's 1 s interval is not aligned to the second boundary; display only, fine until the live UI redraws more.
 - [ ] `application/ports/TicketTierRepository.ts` is still unused (TB-020's note): the checkout page gets the tier from the event it came from. Delete it when a task is sure nothing will need it.

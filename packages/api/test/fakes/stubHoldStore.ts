@@ -13,6 +13,7 @@ export function stubHoldStore(overrides: Partial<HoldStore>): HoldStore {
     find: notInThisTest,
     expired: notInThisTest,
     sweep: notInThisTest,
+    consume: notInThisTest,
     ...overrides,
   };
 }

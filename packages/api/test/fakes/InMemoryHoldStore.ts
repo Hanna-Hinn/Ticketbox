@@ -101,6 +101,14 @@ export class InMemoryHoldStore implements HoldStore, InventoryRepair {
     return { swept: true, restored: true, remaining: restored };
   }
 
+  async consume(token: HoldToken): Promise<boolean> {
+    // Sold, not released: the quantity stays out of the counter.
+    const hold = this.live(token);
+    if (hold === null) return false;
+    this.holds.delete(token);
+    return true;
+  }
+
   async held(tierId: TierId): Promise<readonly HeldEntry[]> {
     if (this.evictedIndexes.has(tierId)) return [];
     return [...this.holds.values()]

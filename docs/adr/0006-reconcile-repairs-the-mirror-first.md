@@ -39,6 +39,6 @@ Reconcile first makes the mirror agree with what the store still holds, then rec
 
 ## **What would make us revisit this:**
 
-- TB-029 choosing to insert the row for a converting hold that has none — then reconcile's "never re-record" could be reconsidered with a reason.
+- TB-029 choosing to insert the row for a converting hold that has none — then reconcile's "never re-record" could be reconsidered with a reason. _TB-029 did not: a hold with no active row cannot be confirmed (ADR 0007). The constraint above is met by `consume_hold.lua` removing the entry with the hash._
 - TB-031's lock making a reserve-free window cheap — then the overwrite could run inside it.
 - The per-tier `find` in step (c) becoming measurable (one round trip per drifted row, only when a row has no entry).

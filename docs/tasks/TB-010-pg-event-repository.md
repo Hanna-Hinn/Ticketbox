@@ -137,5 +137,5 @@ Read the driver's source for the failure path before writing "the error propagat
 
 - [ ] **TB-012:** `pool.on("error", (err) => log.error(…))` in the composition root, or a dropped idle connection terminates the API.
 - [ ] TB-013: `EXPLAIN (ANALYZE, BUFFERS)` on `TIERS_FOR_EVENTS` — the two correlated subqueries are sequential scans of `order_items` and `holds` per tier; that is the baseline. If the `autocannon` target is `GET /events/:id`, `listUpcoming`'s cost is never measured — say so rather than claim it.
-- [ ] TB-029: keep the `converted` flip and the `order_items` insert in one transaction (SQL header comment).
+- [x] TB-029: keep the `converted` flip and the `order_items` insert in one transaction (SQL header comment). _Done; the computed count is tested not to move across a sale._
 - [ ] TB-042: reconcile the 70 % `infrastructure/**` unit-coverage floor with adapters that are integration-tested by design.

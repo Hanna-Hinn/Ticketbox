@@ -1,5 +1,6 @@
 import type { FastifyInstance } from "fastify";
 import pino from "pino";
+import { ConfirmOrderUseCase } from "../application/use-cases/ConfirmOrder.js";
 import { CreateHoldUseCase } from "../application/use-cases/CreateHold.js";
 import { GetCacheStatsUseCase } from "../application/use-cases/GetCacheStats.js";
 import { GetHoldUseCase } from "../application/use-cases/GetHold.js";
@@ -10,6 +11,7 @@ import { ReleaseExpiredHoldsUseCase } from "../application/use-cases/ReleaseExpi
 import { ReleaseHoldUseCase } from "../application/use-cases/ReleaseHold.js";
 import { PgEventRepository } from "../infrastructure/postgres/PgEventRepository.js";
 import { PgHoldRepository } from "../infrastructure/postgres/PgHoldRepository.js";
+import { PgOrderRepository } from "../infrastructure/postgres/PgOrderRepository.js";
 import { createPool } from "../infrastructure/postgres/pool.js";
 import { CachedEventRepository } from "../infrastructure/redis/CachedEventRepository.js";
 import { RedisCacheStats } from "../infrastructure/redis/RedisCacheStats.js";
@@ -20,6 +22,7 @@ import { UuidTokenGenerator } from "../infrastructure/system/UuidTokenGenerator.
 import { AdminController } from "../presentation/http/controllers/AdminController.js";
 import { EventController } from "../presentation/http/controllers/EventController.js";
 import { HoldController } from "../presentation/http/controllers/HoldController.js";
+import { OrderController } from "../presentation/http/controllers/OrderController.js";
 import { StatsController } from "../presentation/http/controllers/StatsController.js";
 import { buildServer } from "../presentation/http/server.js";
 import type { Config } from "./config.js";
@@ -61,8 +64,11 @@ export function compose(config: Config): System {
   const holds = new RedisHoldStore(redis, log.child({ component: "hold-store" }));
   // HoldRepository: the audit row, written after the store decides (TB-024).
   const holdMirror = new PgHoldRepository(pool);
+  // OrderRepository: the order, its items and the hold's flip, one
+  // transaction (TB-029).
+  const orderRecords = new PgOrderRepository(pool);
   const clock = new SystemClock(); // Clock
-  const tokens = new UuidTokenGenerator(); // TokenGenerator
+  const tokens = new UuidTokenGenerator(); // TokenGenerator, OrderIdGenerator
 
   // Use cases
   const listUpcoming = new ListUpcomingEventsUseCase(events, clock);
@@ -78,6 +84,7 @@ export function compose(config: Config): System {
   );
   const getHold = new GetHoldUseCase(holds, clock);
   const releaseHold = new ReleaseHoldUseCase(holds, holdMirror);
+  const confirmOrder = new ConfirmOrderUseCase(events, holds, orderRecords, clock, tokens);
   const sweeper = new ReleaseExpiredHoldsUseCase(holds, holdMirror, clock);
   // Reconcile reads Postgres, never the cache: a five-minute-old computed
   // count written over the live counter would be reconciliation in reverse.
@@ -86,6 +93,7 @@ export function compose(config: Config): System {
   // HTTP
   const controller = new EventController(listUpcoming, getAvailability);
   const holdController = new HoldController(createHold, getHold, releaseHold);
+  const orderController = new OrderController(confirmOrder);
   const stats = new StatsController(getCacheStats);
   const admin = new AdminController(reconcile);
   const checks = {
@@ -100,6 +108,7 @@ export function compose(config: Config): System {
     logger: log,
     events: controller,
     holds: holdController,
+    orders: orderController,
     stats,
     admin,
     checks,

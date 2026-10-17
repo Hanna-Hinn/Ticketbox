@@ -118,5 +118,5 @@ Not copy a signature "verbatim" without asking what each parameter is keyed on. 
 
 - [ ] TB-010: decide whether `listUpcoming` needs the full availability computation or a lighter list shape (plan decision 9).
 - [x] TB-022: define `reserve` on a missing counter key (refused as `insufficient`, with a warn naming the tier); name the clock behind the ZSET score (the use case's `Clock`, carried by the `Hold` entity — `reserve` takes the entity now).
-- [ ] TB-029: one transaction across orders, order_items and the hold's status (decision 10); an `OrderId` source (decision 11).
+- [x] TB-029: one transaction across orders, order_items and the hold's status (decision 10); an `OrderId` source (decision 11). _`OrderRepository.save` owns the transaction, flip first; `OrderIdGenerator` on `UuidTokenGenerator` (ADR 0007)._
 - [ ] TB-033/034: the stream publisher is a different port from `EventPublisher`, not a second method on it (decision 5).

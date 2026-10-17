@@ -16,6 +16,8 @@ export interface OrderProps {
   readonly email: string;
   readonly items: readonly OrderItem[];
   readonly createdAt: Date;
+  /** The client's Idempotency-Key, when it sent one (TB-029); TB-030 makes it mandatory. */
+  readonly idempotencyKey?: string;
 }
 
 // A hold that was confirmed before its timer ran out. Permanent.
@@ -24,6 +26,7 @@ export class Order {
   readonly holdToken: HoldToken;
   readonly email: string;
   readonly items: readonly OrderItem[];
+  readonly idempotencyKey: string | null;
   private readonly createdAtMs: number;
 
   private constructor(props: OrderProps) {
@@ -33,11 +36,15 @@ export class Order {
     // A copy, frozen: the caller still holds the original array, and an
     // order whose items grow after creation is an order whose total changes.
     this.items = Object.freeze([...props.items]);
+    this.idempotencyKey = props.idempotencyKey ?? null;
     this.createdAtMs = props.createdAt.getTime();
   }
 
   static create(props: OrderProps): Order {
     if (props.items.length === 0) throw new InvalidOrder("an order needs at least one item");
+    if (props.idempotencyKey !== undefined && props.idempotencyKey.length === 0) {
+      throw new InvalidOrder("an idempotency key cannot be empty");
+    }
     return new Order(props);
   }
 
