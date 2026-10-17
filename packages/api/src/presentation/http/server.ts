@@ -2,11 +2,17 @@ import Fastify, { type FastifyInstance, type FastifyRequest } from "fastify";
 import { serializerCompiler, validatorCompiler } from "fastify-type-provider-zod";
 import type { EventController } from "./controllers/EventController.js";
 import { registerEventRoutes } from "./routes/events.js";
-import { registerHealthRoutes, type DependencyChecks } from "./routes/health.js";
+import {
+  DEFAULT_CHECK_TIMEOUT_MS,
+  registerHealthRoutes,
+  type DependencyChecks,
+} from "./routes/health.js";
 
 export interface ServerDeps {
   readonly events: EventController;
   readonly checks: DependencyChecks;
+  // Only a test has a reason to set this: a tiny real bound beats a 2 s wait.
+  readonly healthCheckTimeoutMs?: number;
 }
 
 // Everything the server needs arrives through `deps`; nothing here knows
@@ -35,6 +41,6 @@ export function buildServer(deps: ServerDeps): FastifyInstance {
   });
 
   registerEventRoutes(app, deps.events);
-  registerHealthRoutes(app, deps.checks);
+  registerHealthRoutes(app, deps.checks, deps.healthCheckTimeoutMs ?? DEFAULT_CHECK_TIMEOUT_MS);
   return app;
 }

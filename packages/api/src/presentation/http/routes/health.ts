@@ -11,15 +11,12 @@ export type DependencyChecks = Readonly<Record<string, () => Promise<void>>>;
 // bound, one hung engine would hide the other's status behind a request
 // that never returns. The driver's own timeout eventually settles the
 // dangling ping; nothing here waits for it.
-const CHECK_TIMEOUT_MS = 2_000;
+export const DEFAULT_CHECK_TIMEOUT_MS = 2_000;
 
-async function pingWithin(ping: () => Promise<void>): Promise<"ok" | "down"> {
+async function pingWithin(ping: () => Promise<void>, timeoutMs: number): Promise<"ok" | "down"> {
   let timer: NodeJS.Timeout | undefined;
   const deadline = new Promise<never>((_, reject) => {
-    timer = setTimeout(
-      () => reject(new Error(`health check exceeded ${CHECK_TIMEOUT_MS}ms`)),
-      CHECK_TIMEOUT_MS,
-    );
+    timer = setTimeout(() => reject(new Error(`health check exceeded ${timeoutMs}ms`)), timeoutMs);
   });
   try {
     await Promise.race([ping(), deadline]);
@@ -31,7 +28,11 @@ async function pingWithin(ping: () => Promise<void>): Promise<"ok" | "down"> {
   }
 }
 
-export function registerHealthRoutes(app: FastifyInstance, checks: DependencyChecks): void {
+export function registerHealthRoutes(
+  app: FastifyInstance,
+  checks: DependencyChecks,
+  timeoutMs: number,
+): void {
   const routes = app.withTypeProvider<ZodTypeProvider>();
 
   routes.get(
@@ -41,7 +42,7 @@ export function registerHealthRoutes(app: FastifyInstance, checks: DependencyChe
       const results = await Promise.all(
         Object.entries(checks).map(async ([name, ping]): Promise<[string, "ok" | "down"]> => [
           name,
-          await pingWithin(ping),
+          await pingWithin(ping, timeoutMs),
         ]),
       );
       const healthy = results.every(([, status]) => status === "ok");
