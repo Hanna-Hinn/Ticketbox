@@ -1,6 +1,6 @@
 # TB-025 — Hold UI with countdown
 
-**Status:** Approved
+**Status:** Implemented — see [`docs/tasks/TB-025-hold-ui-countdown.md`](../tasks/TB-025-hold-ui-countdown.md)
 **Date:** 2026-10-17
 **Task:** TB-025 (`docs/02-product-delivery-plan.md`)
 **Branch:** `feat/TB-025-hold-ui-countdown` (stacked on `feat/TB-024-postgres-hold-mirror`)
@@ -145,7 +145,15 @@ None blocking. Decision 1 is the one to argue: a reviewer may prefer the counter
 
 ## 9. Documentation this task will produce
 
-- ☐ ADR — none new; one line in ADR 0002 for the seed as the counter's first writer
+- ☑ ADR — none new; one line in ADR 0002 for the seed as the counter's first writer
 - ☑ Task doc — `docs/tasks/TB-025-hold-ui-countdown.md`
 - ☐ Benchmark entry — nothing measurable changed
 - ☐ NOTES entry — not a SPIKE task
+
+---
+
+## 10. Amendments after implementation
+
+- **Decision 5 wrong** (the countdown's anchor — a Critical), **decisions 1, 3 and 6 corrected** (Redis first in the seed; the bound referenced in the schema and `InvalidQuantity` unmapped; no sold-out decision in the browser), all in review and marked in place above.
+- **§4:** `test/integration/http/support.ts` added (three `unused*Controller()` helpers); `hold-mirror.test.ts` deleted, not changed; `playwright.config.ts` changed (`workers: 1`).
+- **§5:** a second E2E file for the failure paths the review named; the hash-without-`eventId` tests written in Phase 4; the clock-jump spec first asserted zero reads and had to be rewritten to assert the one read that is true.

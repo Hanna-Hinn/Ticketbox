@@ -159,7 +159,7 @@ Write the invariant tests with the invariant, not after a reviewer's sabotage sh
 
 ## 8. Follow-ups left behind
 
-- [ ] TB-025: what `GET /holds/:token` must carry for the checkout summary (tier name, price, event) — enrich in `GetHold` via `TicketTierRepository`, or let the UI keep the event it came from. Decided there, not here.
-- [ ] `application/ports/TicketTierRepository.ts` has no consumer in `src/` or `test/`; decision 1 keeps it that way. Delete or use it when TB-025 decides the above.
+- [x] TB-025: what `GET /holds/:token` must carry for the checkout summary (tier name, price, event) — enrich in `GetHold` via `TicketTierRepository`, or let the UI keep the event it came from. Decided there, not here. _TB-025: the hold carries `eventId`; the checkout page fetches the event (a cache hit) and finds its tier. `GetHold` stays one lookup._
+- [ ] `application/ports/TicketTierRepository.ts` has no consumer in `src/` or `test/`; decision 1 keeps it that way. Delete or use it when TB-025 decides the above. _TB-025 decided against using it; still unused, still not deleted._
 - [ ] TB-024: `ReleaseHold` is where `HoldRepository.setStatus(token, "released")` lands; TB-027/SSE: where `EventPublisher.availabilityChanged` lands. Both refused here as speculative.
 - [x] TB-022: the fake is stricter than Redis on a reused token and on an out-of-range qty — not inherited; `reserve(hold)` removed the qty check from the fake altogether, and the real store's reused-token behaviour is the replay guard (pays once).
