@@ -6,5 +6,5 @@
     "lib": ["ES2023", "DOM", "DOM.Iterable"],
     "noEmit": true
   },
-  "include": ["test/**/*.ts", "vitest.unit.config.ts"]
+  "include": ["test/**/*.ts", "e2e/**/*.ts", "vitest.unit.config.ts", "playwright.config.ts"]
 }

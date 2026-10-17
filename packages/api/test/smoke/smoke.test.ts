@@ -6,6 +6,7 @@ import { SEED_EVENTS } from "../../src/infrastructure/postgres/seed.js";
 // todo carrying the task that makes it real, not a test pretending to pass.
 
 const baseUrl = process.env.SMOKE_BASE_URL ?? "http://localhost:3000";
+const webUrl = process.env.SMOKE_WEB_URL ?? "http://localhost:5173";
 const firstSeedEvent = SEED_EVENTS[0];
 if (firstSeedEvent === undefined) throw new Error("SEED_EVENTS is empty; smoke needs a seeded id");
 const seededEventId: string = firstSeedEvent.id;
@@ -36,5 +37,11 @@ describe("smoke", () => {
 
   it.todo("POST /holds for 1 ticket returns 201 — TB-025 (route) over TB-022 (Lua reserve)");
   it.todo("DELETE /holds/:token returns 200 — TB-023 (release) once the route exists");
-  it.todo("the web app's root HTML is served — TB-016, once CI starts the web app for Playwright");
+  it("the web app's root HTML is served (needs pnpm dev:web)", async () => {
+    const response = await fetch(`${webUrl}/`);
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get("content-type")).toContain("text/html");
+    expect(await response.text()).toContain('<div id="root">');
+  });
 });

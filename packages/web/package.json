@@ -6,9 +6,11 @@
     "dev": "vite",
     "build": "vite build",
     "typecheck": "tsc -p tsconfig.json && tsc -p tsconfig.node.json && tsc -p tsconfig.test.json",
-    "test:unit": "vitest run --config vitest.unit.config.ts"
+    "test:unit": "vitest run --config vitest.unit.config.ts",
+    "test:e2e": "playwright test"
   },
   "devDependencies": {
+    "@playwright/test": "1.56.1",
     "@ticketbox/api": "workspace:*",
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
