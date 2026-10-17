@@ -4,6 +4,10 @@ import type { Client } from "pg";
 // That is the whole idempotency mechanism: a second run matches every
 // primary key and inserts nothing. Fixed ids also let later smoke tests
 // GET /events/<known id> without querying first.
+//
+// starts_at is an offset from the seed run, not a calendar date: GET /events
+// lists *upcoming* events (TB-010 listUpcoming), and a fixed date would make
+// a fresh clone seed an empty-looking box office once that date has passed.
 
 interface SeedTier {
   id: string;
@@ -16,7 +20,7 @@ interface SeedEvent {
   id: string;
   name: string;
   venue: string;
-  startsAt: string;
+  startsIn: string; // Postgres interval literal, relative to the first seed run
   tiers: SeedTier[];
 }
 
@@ -25,7 +29,7 @@ export const SEED_EVENTS: readonly SeedEvent[] = [
     id: "11111111-1111-4111-8111-111111111111",
     name: "Rooftop Jazz Night",
     venue: "The Terrace, Ramallah",
-    startsAt: "2026-12-05T19:30:00Z",
+    startsIn: "7 weeks",
     tiers: [
       {
         id: "11111111-1111-4111-8111-aaaaaaaaaaaa",
@@ -47,7 +51,7 @@ export const SEED_EVENTS: readonly SeedEvent[] = [
     id: "22222222-2222-4222-8222-222222222222",
     name: "Late Night Comedy",
     venue: "Basement Club",
-    startsAt: "2026-12-12T22:00:00Z",
+    startsIn: "8 weeks",
     tiers: [
       {
         id: "22222222-2222-4222-8222-aaaaaaaaaaaa",
@@ -68,7 +72,7 @@ export const SEED_EVENTS: readonly SeedEvent[] = [
     id: "33333333-3333-4333-8333-333333333333",
     name: "Indie Film Marathon",
     venue: "Cinema Paradiso",
-    startsAt: "2026-12-19T16:00:00Z",
+    startsIn: "9 weeks",
     tiers: [
       {
         id: "33333333-3333-4333-8333-aaaaaaaaaaaa",
@@ -93,9 +97,9 @@ export async function seed(client: Client): Promise<{ events: number; tiers: num
   for (const event of SEED_EVENTS) {
     const inserted = await client.query(
       `INSERT INTO events (id, name, venue, starts_at)
-       VALUES ($1, $2, $3, $4)
+       VALUES ($1, $2, $3, now() + $4::interval)
        ON CONFLICT (id) DO NOTHING`,
-      [event.id, event.name, event.venue, event.startsAt],
+      [event.id, event.name, event.venue, event.startsIn],
     );
     events += inserted.rowCount ?? 0;
 
