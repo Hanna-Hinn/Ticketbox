@@ -1,6 +1,6 @@
 # TB-027 — Reconciliation endpoint
 
-**Status:** Approved
+**Status:** Implemented — see [`docs/tasks/TB-027-reconciliation-endpoint.md`](../tasks/TB-027-reconciliation-endpoint.md)
 **Date:** 2026-10-17
 **Task:** TB-027 (`docs/02-product-delivery-plan.md`)
 **Branch:** `feat/TB-027-reconciliation-endpoint` (stacked on `feat/TB-026-expired-hold-sweeper`)
@@ -168,7 +168,15 @@ None blocking. Decision 1 is the one to argue: a reviewer may read the Scope lin
 
 ## 9. Documentation this task will produce
 
-- ☐ ADR — `docs/adr/0006-reconcile-repairs-the-mirror-first.md` — decision 1; one line each in ADR 0002, 0004, 0005
-- ☐ Task doc — `docs/tasks/TB-027-reconciliation-endpoint.md`
+- ☑ ADR — `docs/adr/0006-reconcile-repairs-the-mirror-first.md` — decision 1; one line each in ADR 0002, 0004, 0005
+- ☑ Task doc — `docs/tasks/TB-027-reconciliation-endpoint.md`
 - ☐ Benchmark entry — nothing measurable changed
 - ☐ NOTES entry — not a SPIKE task
+
+---
+
+## 10. Amendments after implementation
+
+- **Decision 1(c) wrong** (a row with no entry is not a gone hold — Critical, proven), **1(d) over-reached** (the row write removed), **decision 2** gained two windows, **decisions 4, 5, 8** and the ports block corrected for `InventoryRepair`, no `expiresAt`, no `rowsRecorded`; **§6** rewritten around entry × hash × row and "isolated, not rolled back" — all in review and marked in place above.
+- **§5** was corrected before Phase 4 read it (re-review).
+- **§4:** `ports/InventoryRepair.ts` added; `HoldStore.ts` unchanged after all; the composition test gained `DELETE FROM holds` per case.

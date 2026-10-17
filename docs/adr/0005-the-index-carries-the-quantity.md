@@ -37,6 +37,6 @@ The index entry carries the quantity: the sorted-set member is `"<token>:<qty>"`
 
 ## **What would make us revisit this:**
 
-- TB-027 choosing to rebuild the index from Postgres as part of reconciliation — then the member could carry less, because the rows would be the recovery path for everything.
+- TB-027 choosing to rebuild the index from Postgres as part of reconciliation — then the member could carry less, because the rows would be the recovery path for everything. _TB-027 did not: it trusts the index, expires the rows of holds gone from both keys, and subtracts what the index holds that the rows do not (ADR 0006)._
 - Redis hash-field expiry (7.4+) making the hash itself the index: one structure per tier with per-field TTLs, and no composite members. Not available on the 7.0 this project runs.
 - The scan becoming measurable (BENCHMARKS) — then a global index.
