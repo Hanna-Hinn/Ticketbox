@@ -1,5 +1,5 @@
 import type { HoldToken } from "../../domain/value-objects/HoldToken.js";
-import type { TierId } from "../../domain/value-objects/Ids.js";
+import type { EventId, TierId } from "../../domain/value-objects/Ids.js";
 
 // Every Redis key in the system is built here, from a branded id, so a tier
 // key can never be built from an event id and a string-literal key anywhere
@@ -16,4 +16,7 @@ export const keys = {
   tierHolds: (id: TierId): string => `${KEY_PREFIX}tier:${id}:holds`,
   // hash: the live hold, with the TTL (TB-022)
   hold: (token: HoldToken): string => `${KEY_PREFIX}hold:${token}`,
+  // string: the JSON of an Event, 300 s TTL — the cache-aside entry (TB-018).
+  // Its own namespace, so cache keys can be targeted without touching holds.
+  eventCache: (id: EventId): string => `${KEY_PREFIX}cache:event:${id}`,
 } as const;

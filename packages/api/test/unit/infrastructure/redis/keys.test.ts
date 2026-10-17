@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { holdToken } from "../../../../src/domain/value-objects/HoldToken.js";
-import { tierId } from "../../../../src/domain/value-objects/Ids.js";
+import { eventId, tierId } from "../../../../src/domain/value-objects/Ids.js";
 import { keys } from "../../../../src/infrastructure/redis/keys.js";
 
 // The shapes the delivery plan documents: ticketbox:v1:hold:* (TB-040),
@@ -15,6 +15,12 @@ describe("key registry", () => {
   it("builds the tier's holds index", () => {
     expect(keys.tierHolds(TIER)).toBe(
       "ticketbox:v1:tier:11111111-1111-4111-8111-aaaaaaaaaaaa:holds",
+    );
+  });
+
+  it("builds the cache key for an event in its own namespace", () => {
+    expect(keys.eventCache(eventId("11111111-1111-4111-8111-111111111111"))).toBe(
+      "ticketbox:v1:cache:event:11111111-1111-4111-8111-111111111111",
     );
   });
 

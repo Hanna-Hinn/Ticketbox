@@ -1,17 +1,24 @@
 import { fileURLToPath } from "node:url";
+import type { Redis } from "ioredis";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { compose, type System } from "../../../src/main/composition.js";
 import { runMigrations } from "../../../src/infrastructure/postgres/migrations.js";
 import { seed } from "../../../src/infrastructure/postgres/seed.js";
+import { keys } from "../../../src/infrastructure/redis/keys.js";
+import { eventId } from "../../../src/domain/value-objects/Ids.js";
 import { connectToTestDatabase, resetSchema, testDatabaseUrl } from "../support/database.js";
+import { connectToTestRedis, testRedisUrl } from "../support/redis.js";
 
 const migrationsDir = fileURLToPath(new URL("../../../../../migrations/", import.meta.url));
 
 // The real composition root against the test database: every adapter is the
 // production one; only the connection string and the log level differ.
 let system: System;
+let redis: Redis;
 
 beforeAll(async () => {
+  redis = await connectToTestRedis();
+  await redis.flushdb();
   const client = await connectToTestDatabase();
   await resetSchema(client);
   await runMigrations(client, migrationsDir);
@@ -19,7 +26,7 @@ beforeAll(async () => {
   await client.end();
   system = compose({
     DATABASE_URL: testDatabaseUrl(),
-    REDIS_URL: "redis://localhost:6379",
+    REDIS_URL: testRedisUrl(),
     PORT: 0,
     LOG_LEVEL: "silent",
   });
@@ -27,6 +34,7 @@ beforeAll(async () => {
 
 afterAll(async () => {
   await system.close();
+  await redis.quit();
 });
 
 describe("compose", () => {
@@ -46,6 +54,23 @@ describe("compose", () => {
     expect(one.json<{ tiers: { name: string; remaining: number }[] }>().tiers).toEqual(
       expect.arrayContaining([expect.objectContaining({ name: "VIP", remaining: 0 })]),
     );
+  });
+
+  it("serves the second read of an event from the cache the root wired in", async () => {
+    const jazz = eventId("11111111-1111-4111-8111-111111111111");
+    await system.app.inject({ url: `/events/${jazz}` });
+    const raw = await redis.get(keys.eventCache(jazz));
+    expect(raw).not.toBeNull();
+    await redis.set(
+      keys.eventCache(jazz),
+      JSON.stringify({ ...JSON.parse(raw ?? "{}"), name: "From the cache" }),
+      "EX",
+      300,
+    );
+
+    const second = await system.app.inject({ url: `/events/${jazz}` });
+
+    expect(second.json<{ name: string }>().name).toBe("From the cache");
   });
 
   it("reports Redis down within the health bound and still closes promptly", async () => {
@@ -71,7 +96,7 @@ describe("compose", () => {
   it("closes idempotently", async () => {
     const extra = compose({
       DATABASE_URL: testDatabaseUrl(),
-      REDIS_URL: "redis://localhost:6379",
+      REDIS_URL: testRedisUrl(),
       PORT: 0,
       LOG_LEVEL: "silent",
     });
