@@ -6,9 +6,10 @@ export interface AvailabilityChange {
   readonly remaining: number;
 }
 
-// The use case announces "hold created" without knowing whether that is
-// Pub/Sub, a Stream, or nothing at all. The payload is what a subscriber
-// needs: tier X now has N left.
+// The use case announces that a tier's availability moved, without knowing
+// whether that is Pub/Sub, a Stream, or nothing at all. One method, not one
+// per cause: a hold created, released or swept all produce the same payload,
+// and subscribers only ever consume the effect ("tier X now has N left").
 export interface EventPublisher {
-  holdCreated(change: AvailabilityChange): Promise<void>;
+  availabilityChanged(change: AvailabilityChange): Promise<void>;
 }
