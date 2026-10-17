@@ -25,7 +25,7 @@
 
 ## Consequences
 
-**Good:** the boundary held — no controller, use case or DTO changed. Reads survive a Redis outage unchanged. A read whose cache command was on the wire when Redis died costs at most the deadline. A corrupt entry heals itself on the next read — unless its event no longer exists in Postgres, in which case nothing is rewritten and it warns on every read until its TTL expires.
+**Good:** the boundary held — no controller, use case or DTO changed. Reads survive a Redis outage unchanged. A read whose cache command was on the wire when Redis died costs at most the deadline. A corrupt entry heals itself on the next read — into the event's JSON, or (since TB-019) into the 30 s negative entry when the event no longer exists in Postgres.
 
 **Bad / accepted trade-off:** up to 300 s of staleness after any change to an event (nothing changes events today). The first read of a cold key still pays Postgres, and under concurrency every concurrent miss does — the stampede TB-019 closes. Hit/miss are invisible until TB-019's counters.
 

@@ -19,8 +19,9 @@ import { keys } from "../../../src/infrastructure/redis/keys.js";
 import { connectToTestDatabase, resetSchema } from "../support/database.js";
 import { connectToTestRedis } from "../support/redis.js";
 
-// Counts reads and answers slowly: without the delay the first miss fills
-// the cache before the second GET and a stampede test proves nothing.
+// Counts reads and answers slowly. The stampede tests go red without the
+// delay too (fifty pipelined GETs all return nil before Postgres answers);
+// the 50 ms is a margin against a faster Postgres, not what makes them sound.
 class SlowCountingRepository implements EventRepository {
   calls = 0;
   constructor(

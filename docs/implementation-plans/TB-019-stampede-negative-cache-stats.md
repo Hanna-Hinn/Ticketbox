@@ -1,6 +1,6 @@
 # TB-019 — Stampede protection, negative caching, stats
 
-**Status:** Approved
+**Status:** Implemented — see [`docs/tasks/TB-019-stampede-negative-cache-stats.md`](../tasks/TB-019-stampede-negative-cache-stats.md) §3 for where reality diverged
 **Date:** 2026-10-17
 **Task:** TB-019 (`docs/02-product-delivery-plan.md`)
 **Branch:** `feat/TB-019-stampede-negative-cache-stats` (stacked on `feat/TB-018-cached-event-repository`)
@@ -55,7 +55,7 @@ findById(id)
     hit, parses                       → stats.recordHit()  → Event
     hit, rejected                     → warn → treat as miss
     miss                              → stats.recordMiss()
-      SET cache:event:<id>:refresh <token> NX PX 1000     (deadline)
+      SET cache:event:<id>:refresh "1" NX PX 1000         (deadline)   [amended: the value was <token>; nothing reads it]
         won  → inner.findById → SET event JSON EX 300 | SET NEGATIVE_SENTINEL EX 30 → return
         lost → poll GET cache:event:<id> every 10 ms for up to 1000 ms
                  value appears → parse / sentinel → return   (counted as the one miss above, not as a hit)
@@ -69,7 +69,7 @@ findById(id)
 
 ### Decisions this plan is making
 
-1. **The mutex is expiry-only; no release.** `SET cache:event:<id>:refresh <token> NX PX 1000`; the winner does not delete it. Deleting a lock safely needs compare-and-delete (a `DEL` can release someone else's — CLAUDE.md's trap), which is a Lua script, a typed wrapper and an integration test: that is TB-031's lesson ("locking"), not this task's. The cost of not releasing: in the window after a refresh and before the mutex expires (≤ 1 s), a caller that finds the key _missing_ (only possible after an `invalidate`, which nothing calls) cannot win and polls for up to 1 s before reading through. Named here; TB-031 removes it.
+1. **The mutex is expiry-only; no release.** `SET cache:event:<id>:refresh "1" NX PX 1000` (amended from `<token>` in review: with no release there is no reader for a token); the winner does not delete it. Deleting a lock safely needs compare-and-delete (a `DEL` can release someone else's — CLAUDE.md's trap), which is a Lua script, a typed wrapper and an integration test: that is TB-031's lesson ("locking"), not this task's. The cost of not releasing: in the window after a refresh and before the mutex expires (≤ 1 s), a caller that finds the key _missing_ (only possible after an `invalidate`, which nothing calls) cannot win and polls for up to 1 s before reading through. Named here; TB-031 removes it.
 2. **Losers poll the cache key, not the mutex.** 10 ms apart, up to the mutex TTL. Polling is a sleep in disguise; the alternative (Pub/Sub on the key, or a `BLPOP` handshake) is a second mechanism for a window that is ~25 ms wide in practice. The budget equals the mutex TTL so a dead winner costs a loser at most 1 s before it reads through itself.
 3. **Negative caching is a sentinel value under the same key**, `NEGATIVE_SENTINEL = "null"` (the JSON literal, which the schema can never accept as an event), with `EX 30`. Checked before the Zod step. One key per event keeps the mutex and the read path single; a separate `:missing` key would need its own single-flight.
 4. **A loser that waited and found the value counts as the miss it was, not as a hit.** Counters are per _outcome of the first GET_; forty-nine waiters are forty-nine misses that did not touch Postgres. The hit ratio then reads honestly as "how often Redis had the answer when asked".
@@ -80,7 +80,7 @@ findById(id)
 
 ### New or changed ports / Redis keys / Lua scripts
 
-Port: `CacheStatsReader` (L2). Keys: `ticketbox:v1:cache:event:<id>:refresh` (string, the mutex token, PX 1000); `ticketbox:v1:cache:stats:hits`, `…:misses` (integers, no TTL). No Lua (decision 1).
+Port: `CacheStatsReader` (L2). Keys: `ticketbox:v1:cache:event:<id>:refresh` (string, value `"1"`, PX 1000); `ticketbox:v1:cache:stats:hits`, `…:misses` (integers, no TTL). No Lua (decision 1).
 
 ---
 
@@ -149,7 +149,17 @@ None blocking. Decision 1 (no release; TB-031's compare-and-delete) is the one a
 
 ## 9. Documentation this task will produce
 
-- ☐ ADR — none; ADR 0003 covers the pattern, and single-flight is an implementation of it
+- ☐ ADR — none; ADR 0003 covers the pattern, and single-flight is an implementation of it (one sentence of it corrected: a corrupt key for an unknown event now heals into the sentinel)
 - ☑ Task doc — `docs/tasks/TB-019-stampede-negative-cache-stats.md`
 - ☑ Benchmark entry — `docs/BENCHMARKS.md` §2
 - ☐ NOTES entry — not a SPIKE task (TB-019a is next)
+
+---
+
+## 10. Amendments after implementation
+
+- **Major 1 (review):** `CacheStatsRecorder` is declared in `CachedEventRepository.ts` beside `CacheClient`, and `within` + `CACHE_COMMAND_DEADLINE_MS` moved to `infrastructure/redis/within.ts` — the adapter-declared version was an import cycle. `within.ts` was not in §4's file list.
+- **Decision 7 (review Major 4):** the "indexed, no cache" column _was_ re-measured on this build, by stopping Redis under the running API; BENCHMARKS §2 carries both that column and TB-013's row.
+- **§3 diagram:** a failed or timed-out `GET` is counted as a miss (the diagram showed it as neither); asserted by a unit test.
+- **§5:** `stats.test.ts` was delivered in Phase 4, not Phase 2. Unit tests were tightened after sabotage: asymmetric counter expectations and literal TTL bounds.
+- **Decision 1:** the post-invalidate stall was measured at 1 007 ms and is pinned by a unit test for TB-031 to turn red.
