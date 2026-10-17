@@ -26,6 +26,13 @@ async function holdOneGeneral(page: Page): Promise<string> {
   return token;
 }
 
+// Two round trips to the browser, so a request its timers started during
+// runFor has reached this process before the count is read.
+async function settle(page: Page): Promise<void> {
+  await page.evaluate(() => undefined);
+  await page.evaluate(() => undefined);
+}
+
 function countHoldReads(page: Page, token: string): () => number {
   let reads = 0;
   page.on("request", (request) => {
@@ -34,7 +41,7 @@ function countHoldReads(page: Page, token: string): () => number {
   return () => reads;
 }
 
-test("a browser clock ahead of the server asks the server once, never in a loop", async ({
+test("a browser clock that jumps ahead asks the server once, then counts from its answer", async ({
   page,
 }) => {
   // The fake clock must be installed before the page creates its interval:
@@ -46,13 +53,18 @@ test("a browser clock ahead of the server asks the server once, never in a loop"
   await expect(page.getByTestId("countdown")).toHaveText(/^1:5\d$/);
   const reads = countHoldReads(page, held);
 
-  // The browser's clock jumps ten minutes ahead; the hold is still alive on
-  // the server. The countdown must not read zero.
+  // The browser's clock jumps ten minutes ahead; the hold is alive on the
+  // server. The page may ask once — elapsed time is all it can measure, and
+  // it just measured ten minutes — and must then count from the server's
+  // answer, anchored on the clock it now has, so it does not ask again.
   await page.clock.setSystemTime(Date.now() + TEN_MINUTES);
   await page.clock.runFor(3_000);
 
-  expect(reads()).toBe(0);
+  await expect.poll(reads).toBe(1);
   await expect(page.getByTestId("countdown")).toHaveText(/^1:5\d$/);
+  await page.clock.runFor(3_000);
+  await settle(page);
+  expect(reads()).toBe(1);
   await expect(page.getByTestId("summary")).toBeVisible();
 });
 
@@ -69,6 +81,7 @@ test("at zero the page asks the server once and shows what it says", async ({ pa
 
   await expect(page.getByTestId("hold-gone")).toBeVisible();
   await page.clock.runFor(3_000);
+  await settle(page);
   expect(reads()).toBe(1);
   token = undefined;
 });
