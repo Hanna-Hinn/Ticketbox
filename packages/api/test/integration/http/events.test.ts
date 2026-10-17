@@ -117,7 +117,7 @@ describe("GET /events/:id", () => {
 
     holds.seed(GENERAL, 1000);
     expect(response.statusCode).toBe(500);
-    expect(response.json()).toMatchObject({ code: "FST_ERR_RESPONSE_SERIALIZATION" });
+    expect(response.json()).toEqual({ error: { code: "INTERNAL", message: "internal error" } });
     expect(response.body).not.toContain("-1");
   });
 });
