@@ -124,23 +124,42 @@ describe("50 concurrent confirms of the same hold", () => {
 
 // At the expiry instant the confirm and the sweeper want the same hold.
 // Whoever runs first wins; the counter ends at 10 (the sweep won, tickets
-// back) or 6 (the confirm won, tickets sold) — never 14.
-describe("a confirm racing the sweeper on a hold at its expiry", () => {
-  it.each(Array.from({ length: 10 }, (_, i) => i + 1))(
-    "has exactly one winner and the counter never gains twice (run %i)",
-    async () => {
+// back) or 6 (the confirm won, tickets sold) — never 14. The adapter's
+// consume reads the tier first, so on one connection the sweep would always
+// get there first; the scripts are issued directly, in both orders, so each
+// winner is seen and the loser's answer is checked against it.
+describe("a confirm and the sweeper at the same hold, at its expiry", () => {
+  it.each([
+    ["the confirm", "6"],
+    ["the sweep", "10"],
+  ] as const)(
+    "when %s runs first it wins, and the counter never gains twice",
+    async (first, remaining) => {
       await redis.hset(keys.tier(TIER), "remaining", 10);
       const hold = aHold().forTier(TIER).withToken("tok-1").withQty(4).build();
       await store.reserve(hold);
       const atExpiry = new Date(hold.expiresAt.getTime());
+      const consume = (): Promise<number> =>
+        redis.consumeHold(keys.hold(hold.token), keys.tierHolds(TIER), hold.token, TIER);
+      const sweep = (): Promise<number> =>
+        redis.sweepHold(
+          keys.tierHolds(TIER),
+          keys.tier(TIER),
+          keys.hold(hold.token),
+          `${hold.token}:4`,
+          4,
+          atExpiry.getTime(),
+        );
 
-      const [consumed, swept] = await Promise.all([
-        store.consume(hold.token),
-        store.sweep({ token: hold.token, tierId: TIER, qty: 4 }, atExpiry),
-      ]);
+      const replies =
+        first === "the confirm"
+          ? await Promise.all([consume(), sweep()])
+          : await Promise.all([sweep(), consume()]);
 
-      expect([consumed, swept.swept].filter(Boolean)).toHaveLength(1);
-      expect(await redis.hget(keys.tier(TIER), "remaining")).toBe(consumed ? "6" : "10");
+      // The winner's reply is positive (1 for consume, the new count for sweep); the loser's is -1.
+      expect(replies.filter((reply) => reply >= 0)).toHaveLength(1);
+      expect(replies[0]).toBeGreaterThanOrEqual(0);
+      expect(await redis.hget(keys.tier(TIER), "remaining")).toBe(remaining);
       expect(await redis.exists(keys.hold(hold.token))).toBe(0);
       expect(await redis.zcard(keys.tierHolds(TIER))).toBe(0);
     },
