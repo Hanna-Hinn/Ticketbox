@@ -1,6 +1,6 @@
 # TB-005 — CI pipeline
 
-**Status:** Approved
+**Status:** Implemented — see [`docs/tasks/TB-005-ci-pipeline.md`](../tasks/TB-005-ci-pipeline.md); decision 4 was wrong about _which_ branches the protection must target (see the task doc)
 **Date:** 2026-10-17
 **Task:** TB-005 (`docs/02-product-delivery-plan.md`)
 **Branch:** `feat/TB-005-ci-pipeline` (stacked on `feat/TB-004-migrations-and-seed`)
