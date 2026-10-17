@@ -1,14 +1,14 @@
 import type { ReactNode } from "react";
-import type { EventDetail } from "../api/types.js";
+import { api } from "../api/client.js";
 import { Link } from "../components/Link.js";
 import { ErrorMessage, Loading } from "../components/Status.js";
-import { useFetch } from "../hooks/useFetch.js";
+import { useRequest } from "../hooks/useRequest.js";
 import { formatPrice, formatStartsAt } from "../format.js";
 
 // Every number on this page came from the API. "Sold out" is the label for
 // the API's remaining = 0, not a decision made here.
 export function EventDetailPage({ id }: { id: string }): ReactNode {
-  const { state, retry } = useFetch<EventDetail>(`/api/events/${encodeURIComponent(id)}`);
+  const { state, retry } = useRequest(id, (signal) => api.getEvent(id, signal));
 
   if (state.status === "loading") return <Loading />;
   if (state.status === "error") return <ErrorMessage message={state.message} retry={retry} />;
