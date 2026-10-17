@@ -1,6 +1,6 @@
 # TB-015 — Typed API client
 
-**Status:** Approved
+**Status:** Implemented — see [`docs/tasks/TB-015-typed-api-client.md`](../tasks/TB-015-typed-api-client.md) §3 for where reality diverged
 **Date:** 2026-10-17
 **Task:** TB-015 (`docs/02-product-delivery-plan.md`)
 **Branch:** `feat/TB-015-typed-api-client` (stacked on `feat/TB-014-vite-react-app`)

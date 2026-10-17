@@ -42,7 +42,7 @@ Each entry: what you did, what you expected, what actually happened, and what it
 
 **What this changed about how I think about atomicity:**
 
-*(Cross-reference: these numbers belong in `BENCHMARKS.md` §7 too.)*
+_(Cross-reference: these numbers belong in `BENCHMARKS.md` §7 too.)_
 
 ---
 
@@ -70,7 +70,7 @@ Each entry: what you did, what you expected, what actually happened, and what it
 
 **Availability after calling `POST /_admin/reconcile/:eventId`:**
 
-**Did the 20 in-flight holds survive reconciliation, or were they lost?** *(they should be — Redis was the only place tracking them as "currently held"; think about whether that's the correct trade-off)*
+**Did the 20 in-flight holds survive reconciliation, or were they lost?** _(they should be — Redis was the only place tracking them as "currently held"; think about whether that's the correct trade-off)_
 
 **What this changed about how I think about "Redis restarting in production":**
 
