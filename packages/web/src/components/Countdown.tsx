@@ -1,44 +1,41 @@
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 
-// Display only. It counts down to the server's instant and, at zero, says so
-// once; the page then asks the server, which is the authority on whether the
-// hold is alive. Date.now() here is arithmetic for the display, not a
-// decision — a skewed clock shows a wrong number and still ends in a
-// re-fetch.
+// Display only. The server said how long is left; Date.now() here measures
+// only the time elapsed since that answer arrived, never the distance to an
+// absolute instant — a browser clock ahead of the server would otherwise
+// read zero at once, re-fetch, be told "alive", and ask again as fast as
+// the network allows. Zero is reached no earlier than the server's own
+// expiry, then the page asks once; the server decides.
 export function Countdown({
-  expiresAt,
+  remainingMs,
   onZero,
 }: {
-  expiresAt: string;
+  remainingMs: number;
   onZero: () => void;
 }): ReactNode {
-  const [remainingMs, setRemainingMs] = useState(() => remainingUntil(expiresAt));
+  const [deadline] = useState(() => Date.now() + remainingMs);
+  const [left, setLeft] = useState(remainingMs);
+  const onZeroRef = useRef(onZero);
+  onZeroRef.current = onZero;
 
   useEffect(() => {
-    let reached = false;
-    const tick = (): void => {
-      const left = remainingUntil(expiresAt);
-      setRemainingMs(left);
-      if (left === 0 && !reached) {
-        reached = true;
-        onZero();
+    const interval = window.setInterval(() => {
+      const ms = Math.max(0, deadline - Date.now());
+      setLeft(ms);
+      if (ms === 0) {
+        // Once per expiry, by construction: the interval dies with the call.
+        window.clearInterval(interval);
+        onZeroRef.current();
       }
-    };
-    tick();
-    const interval = window.setInterval(tick, 1_000);
+    }, 1_000);
     return () => window.clearInterval(interval);
-    // onZero is the page's re-fetch; the expiry is what the clock runs on.
-  }, [expiresAt]);
+  }, [deadline]);
 
   return (
     <p className="countdown" data-testid="countdown" aria-live="polite">
-      {format(remainingMs)}
+      {format(left)}
     </p>
   );
-}
-
-function remainingUntil(iso: string): number {
-  return Math.max(0, new Date(iso).getTime() - Date.now());
 }
 
 function format(ms: number): string {

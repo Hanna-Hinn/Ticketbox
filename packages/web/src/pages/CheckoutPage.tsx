@@ -1,5 +1,4 @@
 import { useState, type ReactNode } from "react";
-import type { EventDto } from "@ticketbox/api/src/presentation/dto/events.js";
 import type { HoldDto } from "@ticketbox/api/src/presentation/dto/holds.js";
 import { api, ApiError } from "../api/client.js";
 import { Countdown } from "../components/Countdown.js";
@@ -12,9 +11,17 @@ import { formatPrice } from "../format.js";
 // The hold, then the event it belongs to (a cache hit on the API), rendered
 // as an order summary. No total: qty × price is the first arithmetic the
 // browser would do about money, and the order (TB-029) will say the total.
+// A hold that is gone is an expected answer, carried as data (null), not
+// as an error message to parse.
 export function CheckoutPage({ token }: { token: string }): ReactNode {
   const { state, retry } = useRequest(token, async (signal) => {
-    const hold = await api.getHold(token, signal);
+    let hold: HoldDto;
+    try {
+      hold = await api.getHold(token, signal);
+    } catch (err: unknown) {
+      if (err instanceof ApiError && err.status === 404) return null;
+      throw err;
+    }
     const event = await api.getEvent(hold.eventId, signal);
     return { hold, event };
   });
@@ -22,18 +29,21 @@ export function CheckoutPage({ token }: { token: string }): ReactNode {
   const [releaseError, setReleaseError] = useState<string | undefined>(undefined);
 
   if (state.status === "loading") return <Loading />;
-  if (state.status === "error") {
-    return state.message.startsWith("404") ? (
+  if (state.status === "error") return <ErrorMessage message={state.message} retry={retry} />;
+  if (state.data === null) {
+    return (
       <p className="status" data-testid="hold-gone">
         This hold has expired or was released. <Link to="/">All events</Link>
       </p>
-    ) : (
-      <ErrorMessage message={state.message} retry={retry} />
     );
   }
 
   const { hold, event } = state.data;
+  // The hold was created against this tier; the event always carries it.
   const tier = event.tiers.find((candidate) => candidate.id === hold.tierId);
+  if (tier === undefined) {
+    return <ErrorMessage message={`tier ${hold.tierId} is not on its event`} retry={retry} />;
+  }
 
   const release = async (): Promise<void> => {
     setReleasing(true);
@@ -50,13 +60,17 @@ export function CheckoutPage({ token }: { token: string }): ReactNode {
   return (
     <section>
       <h1>Your tickets are held</h1>
-      <Countdown expiresAt={hold.expiresAt} onZero={retry} />
-      <Summary
-        event={event}
-        tierName={tier?.name ?? hold.tierId}
-        hold={hold}
-        tierPriceCents={tier?.priceCents}
-      />
+      <Countdown key={hold.remainingMs} remainingMs={hold.remainingMs} onZero={retry} />
+      <dl className="summary" data-testid="summary">
+        <dt>Event</dt>
+        <dd>{event.name}</dd>
+        <dt>Tier</dt>
+        <dd>{tier.name}</dd>
+        <dt>Tickets</dt>
+        <dd data-testid="summary-qty">
+          {hold.qty} × {formatPrice(tier.priceCents)}
+        </dd>
+      </dl>
       <p>
         <button
           type="button"
@@ -69,36 +83,10 @@ export function CheckoutPage({ token }: { token: string }): ReactNode {
         <Link to={`/events/${hold.eventId}`}>Back to the event</Link>
       </p>
       {releaseError !== undefined && (
-        <p className="status error" role="alert">
+        <p className="status error" role="alert" data-testid="release-error">
           Could not release: {releaseError}
         </p>
       )}
     </section>
-  );
-}
-
-function Summary({
-  event,
-  tierName,
-  tierPriceCents,
-  hold,
-}: {
-  event: EventDto;
-  tierName: string;
-  tierPriceCents: number | undefined;
-  hold: HoldDto;
-}): ReactNode {
-  return (
-    <dl className="summary" data-testid="summary">
-      <dt>Event</dt>
-      <dd>{event.name}</dd>
-      <dt>Tier</dt>
-      <dd>{tierName}</dd>
-      <dt>Tickets</dt>
-      <dd data-testid="summary-qty">
-        {hold.qty}
-        {tierPriceCents === undefined ? "" : ` × ${formatPrice(tierPriceCents)}`}
-      </dd>
-    </dl>
   );
 }

@@ -14,7 +14,7 @@ export const keys = {
   tier: (id: TierId): string => `${KEY_PREFIX}tier:${id}`,
   // zset: token → expiresAt (epoch ms) — the sweeper's index (TB-022, TB-026)
   tierHolds: (id: TierId): string => `${KEY_PREFIX}tier:${id}:holds`,
-  // hash: { tierId, qty, createdAt, expiresAt } — the live hold, with the TTL (TB-022)
+  // hash: { tierId, eventId, qty, createdAt, expiresAt } — the live hold, with the TTL (TB-022, TB-025)
   hold: (token: HoldToken): string => `${KEY_PREFIX}hold:${token}`,
   // string: the JSON of an Event, CACHE_TTL_SECONDS — the cache-aside entry (TB-018).
   // Its own namespace, so cache keys can be targeted without touching holds.

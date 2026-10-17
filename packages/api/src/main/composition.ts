@@ -50,7 +50,8 @@ export function compose(config: Config): System {
     log.child({ component: "event-cache" }),
   );
   // HoldStore: the live counters and holds, create_hold.lua behind reserve
-  // (TB-022). Nothing seeds the counters yet (TB-027).
+  // (TB-022). The counters are written by `pnpm seed` (seedLiveCounters) for
+  // dev and CI; rebuilding them from Postgres is reconciliation (TB-027).
   const holds = new RedisHoldStore(redis, log.child({ component: "hold-store" }));
   // HoldRepository: the audit row, written after the store decides (TB-024).
   const holdMirror = new PgHoldRepository(pool);

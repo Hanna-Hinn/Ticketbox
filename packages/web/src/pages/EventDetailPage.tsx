@@ -10,8 +10,9 @@ import { formatPrice, formatStartsAt } from "../format.js";
 // Every number on this page came from the API. "Sold out" is the label for
 // the API's remaining = 0, not a decision made here.
 
-// A quantity and a button. No upper bound here: the entity owns it, and a
-// refused quantity comes back as the API's own message, shown verbatim.
+// A quantity and a button. No bound and no "sold out" decision here: a tier
+// the page saw at 0 may have a ticket back by the time the button is
+// pressed, and the API's own answer — 409, 400 — is shown verbatim.
 type TierDto = EventDto["tiers"][number];
 
 function HoldForm({ eventId, tier }: { eventId: string; tier: TierDto }): ReactNode {
@@ -37,13 +38,15 @@ function HoldForm({ eventId, tier }: { eventId: string; tier: TierDto }): ReactN
       <input
         type="number"
         min="1"
+        step="1"
+        required
         value={qty}
         onChange={(event) => setQty(Number(event.target.value))}
         aria-label={`Tickets for ${tier.name}`}
         data-testid="qty"
-        disabled={tier.remaining === 0 || pending}
+        disabled={pending}
       />
-      <button type="submit" disabled={tier.remaining === 0 || pending} data-testid="get-tickets">
+      <button type="submit" disabled={pending} data-testid="get-tickets">
         Get tickets
       </button>
       {error !== undefined && (

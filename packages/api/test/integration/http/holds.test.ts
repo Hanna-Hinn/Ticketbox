@@ -97,8 +97,10 @@ describe("POST /holds", () => {
     });
 
     expect(noEvent.statusCode).toBe(404);
+    expect(noEvent.json().error.message).toMatch(/^event /);
     expect(noTier.statusCode).toBe(404);
     expect(noTier.json()).toMatchObject({ error: { code: "NOT_FOUND" } });
+    expect(noTier.json().error.message).toMatch(/^tier /);
   });
 
   it("answers 409 INSUFFICIENT when the store refuses, with the inventory untouched", async () => {

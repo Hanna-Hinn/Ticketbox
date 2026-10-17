@@ -34,7 +34,12 @@ export function registerHoldRoutes(app: FastifyInstance, holds: HoldController):
 
   routes.get(
     "/holds/:token",
-    { schema: { params: HoldTokenParams, response: { 200: HoldResponse, 404: ErrorResponse } } },
+    {
+      schema: {
+        params: HoldTokenParams,
+        response: { 200: HoldResponse, 400: ErrorResponse, 404: ErrorResponse },
+      },
+    },
     async (request) => holds.get(request.params.token),
   );
 

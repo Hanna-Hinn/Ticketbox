@@ -19,7 +19,6 @@ export default defineConfig({
   // One stack, one seed, one live counter: a spec that holds tickets changes
   // the number every other spec reads. The journeys run one at a time.
   workers: 1,
-  fullyParallel: false,
   reporter: process.env.CI ? "github" : "list",
   use: { baseURL: WEB_URL, trace: "retain-on-failure" },
   webServer: [

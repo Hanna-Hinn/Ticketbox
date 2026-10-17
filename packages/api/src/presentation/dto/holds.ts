@@ -1,15 +1,17 @@
 import { z } from "zod";
+import { Quantity } from "../../domain/value-objects/Quantity.js";
 
 // Tokens are crypto.randomUUID() (UuidTokenGenerator); a malformed one is a
 // 400 from the schema, never a store round trip.
 export const HoldTokenParams = z.object({ token: z.uuid() });
 
-// The upper bound on qty is the entity's (Quantity.MAX_PER_HOLD), surfaced as
-// InvalidQuantity: one copy of the rule, not a second one here.
+// The bound on qty is the entity's; the schema references it rather than
+// copying it, so a quantity outside it is a 400 like any malformed field and
+// the entity's own throw stays an invariant, never a client error.
 export const CreateHoldRequest = z.object({
   eventId: z.uuid(),
   tierId: z.uuid(),
-  qty: z.int().min(1),
+  qty: z.int().min(1).max(Quantity.MAX_PER_HOLD),
 });
 
 export const CreatedHoldResponse = z.object({

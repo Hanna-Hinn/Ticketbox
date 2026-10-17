@@ -48,9 +48,7 @@ beforeEach(async () => {
   // What `pnpm seed` does for dev and CI (TB-025): the live counters.
   await seedLiveCounters(
     redis,
-    SEED_EVENTS.flatMap((event) =>
-      event.tiers.map((tier) => ({ id: tierId(tier.id), totalQty: tier.totalQty })),
-    ),
+    SEED_EVENTS.flatMap((event) => event.tiers),
   );
   await waitForReady();
 });

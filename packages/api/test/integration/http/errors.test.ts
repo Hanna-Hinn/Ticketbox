@@ -4,7 +4,7 @@ import pino from "pino";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { GetEventAvailabilityUseCase } from "../../../src/application/use-cases/GetEventAvailability.js";
 import { ListUpcomingEventsUseCase } from "../../../src/application/use-cases/ListUpcomingEvents.js";
-import { InvalidHold } from "../../../src/domain/errors/InvalidHold.js";
+import { InvalidQuantity } from "../../../src/domain/errors/InvalidQuantity.js";
 import { TierNotFound } from "../../../src/domain/errors/TierNotFound.js";
 import { EventController } from "../../../src/presentation/http/controllers/EventController.js";
 import { unusedHoldController, unusedStatsController } from "./support.js";
@@ -48,7 +48,7 @@ beforeAll(async () => {
     throw new Error("boom: secret");
   });
   app.get("/throw/invariant", async () => {
-    throw new InvalidHold("quantity must be an integer between 1 and 10, got 11");
+    throw new InvalidQuantity("quantity must be an integer between 1 and 10, got 11");
   });
   app.post("/echo", async (request) => request.body);
   await app.ready();

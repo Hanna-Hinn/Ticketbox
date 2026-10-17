@@ -8,8 +8,8 @@ import { connectToTestRedis } from "../support/redis.js";
 const GENERAL = tierId("11111111-1111-4111-8111-aaaaaaaaaaaa");
 const VIP = tierId("11111111-1111-4111-8111-cccccccccccc");
 const tiers = [
-  { id: GENERAL, totalQty: 1000 },
-  { id: VIP, totalQty: 0 },
+  { id: GENERAL as string, totalQty: 1000 },
+  { id: VIP as string, totalQty: 0 },
 ];
 
 let redis: Redis;

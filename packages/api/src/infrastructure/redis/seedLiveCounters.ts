@@ -1,9 +1,9 @@
 import type { Redis } from "ioredis";
-import type { TierId } from "../../domain/value-objects/Ids.js";
+import { tierId } from "../../domain/value-objects/Ids.js";
 import { keys } from "./keys.js";
 
 export interface TierToSeed {
-  readonly id: TierId;
+  readonly id: string;
   readonly totalQty: number;
 }
 
@@ -19,7 +19,7 @@ export async function seedLiveCounters(
 ): Promise<number> {
   let written = 0;
   for (const tier of tiers) {
-    written += await redis.hsetnx(keys.tier(tier.id), "remaining", tier.totalQty);
+    written += await redis.hsetnx(keys.tier(tierId(tier.id)), "remaining", tier.totalQty);
   }
   return written;
 }
