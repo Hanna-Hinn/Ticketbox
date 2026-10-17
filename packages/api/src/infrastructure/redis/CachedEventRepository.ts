@@ -1,3 +1,4 @@
+import type { RedisStatus } from "ioredis";
 import type { Logger } from "pino";
 import { z } from "zod";
 import type { EventRepository } from "../../application/ports/EventRepository.js";
@@ -5,6 +6,7 @@ import { Event } from "../../domain/entities/Event.js";
 import { TicketTier } from "../../domain/entities/TicketTier.js";
 import { eventId, tierId, type EventId } from "../../domain/value-objects/Ids.js";
 import { Money } from "../../domain/value-objects/Money.js";
+import { describeRedisError } from "./client.js";
 import { keys } from "./keys.js";
 
 // Cache-aside in front of another EventRepository (ADR 0003): a miss reads
@@ -18,15 +20,23 @@ import { keys } from "./keys.js";
 //   else is a miss, logged, never a 500.
 // - A dead Redis must not slow a read down. With the offline queue on
 //   (TB-017), a GET issued while the client is reconnecting waits, so when
-//   the client is not "ready" the cache is skipped, and a cache command that
-//   throws is treated as a miss.
+//   the client is not "ready" the cache is skipped. That guard cannot see a
+//   command already on the wire when the socket dies: ioredis re-sends it
+//   after the reconnect (autoResendUnfulfilledCommands, default on) and
+//   rejects it only after maxRetriesPerRequest attempts, ~74 s with TB-017's
+//   defaults. So every cache command also runs under a deadline, and a
+//   command that fails or exceeds it is a miss. The dangling command settles
+//   on its own later; nothing here waits for it.
 
 export const CACHE_TTL_SECONDS = 300;
+// A healthy local GET is ~1 ms and the fallback (Postgres, indexed) ~23 ms;
+// a cache read that takes longer than the fallback has stopped being one.
+export const CACHE_COMMAND_DEADLINE_MS = 100;
 
 // The subset of ioredis the decorator uses, so a unit test can fake it with
 // a Map. Structural; the real client satisfies it unchanged.
 export interface CacheClient {
-  readonly status: string;
+  readonly status: RedisStatus;
   get(key: string): Promise<string | null>;
   set(key: string, value: string, secondsToken: "EX", seconds: number): Promise<unknown>;
   del(key: string): Promise<unknown>;
@@ -82,16 +92,22 @@ export class CachedEventRepository implements EventRepository {
   }
 
   // The "explicit DEL on writes". Nothing writes events yet; the method is
-  // here for the writer that will, and for the tests that prove it.
+  // here for the writer that will, and for the tests that prove it. Unlike a
+  // read, an invalidation that cannot happen must not be swallowed — that
+  // would serve the old row for another 300 s — but it must not hang
+  // either: not ready, or past the deadline, is a thrown error (ADR 0003).
   async invalidate(id: EventId): Promise<void> {
-    await this.cache.del(keys.eventCache(id));
+    if (this.cache.status !== "ready") {
+      throw new Error(`cache invalidation failed: client is ${this.cache.status}`);
+    }
+    await within(this.cache.del(keys.eventCache(id)), CACHE_COMMAND_DEADLINE_MS);
   }
 
   private async read(key: string): Promise<Event | null> {
     if (this.cache.status !== "ready") return null;
     let raw: string | null;
     try {
-      raw = await this.cache.get(key);
+      raw = await within(this.cache.get(key), CACHE_COMMAND_DEADLINE_MS);
     } catch (err: unknown) {
       this.log.warn({ err: describe(err), key }, "cache read failed; reading through");
       return null;
@@ -101,11 +117,16 @@ export class CachedEventRepository implements EventRepository {
   }
 
   private async write(key: string, event: Event): Promise<void> {
+    // Not "harmless to skip": an awaited SET during a reconnect would hold
+    // the response until Redis returns.
     if (this.cache.status !== "ready") return;
     try {
       // Always with EX: a plain SET on an existing key clears its TTL and
       // makes it immortal (handbook §7.1).
-      await this.cache.set(key, JSON.stringify(toJson(event)), "EX", CACHE_TTL_SECONDS);
+      await within(
+        this.cache.set(key, JSON.stringify(toJson(event)), "EX", CACHE_TTL_SECONDS),
+        CACHE_COMMAND_DEADLINE_MS,
+      );
     } catch (err: unknown) {
       this.log.warn({ err: describe(err), key }, "cache write failed; serving uncached");
     }
@@ -169,8 +190,20 @@ function fromJson(json: CachedEventJson): Event {
   });
 }
 
-function describe(err: unknown): { name: string; message: string } {
+function describe(err: unknown): ReturnType<typeof describeRedisError> {
   return err instanceof Error
-    ? { name: err.name, message: err.message }
-    : { name: "unknown", message: String(err) };
+    ? describeRedisError(err)
+    : { name: "unknown", message: String(err), stack: undefined };
+}
+
+async function within<T>(command: Promise<T>, ms: number): Promise<T> {
+  let timer: NodeJS.Timeout | undefined;
+  const deadline = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => reject(new Error(`cache command exceeded ${ms}ms`)), ms);
+  });
+  try {
+    return await Promise.race([command, deadline]);
+  } finally {
+    clearTimeout(timer);
+  }
 }
