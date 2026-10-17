@@ -11,6 +11,7 @@ import { FixedTokenGenerator } from "../../../fakes/FixedTokenGenerator.js";
 import { InMemoryEventRepository } from "../../../fakes/InMemoryEventRepository.js";
 import { InMemoryHoldRepository } from "../../../fakes/InMemoryHoldRepository.js";
 import { InMemoryHoldStore } from "../../../fakes/InMemoryHoldStore.js";
+import { stubHoldRepository } from "../../../fakes/stubHoldRepository.js";
 import { stubHoldStore } from "../../../fakes/stubHoldStore.js";
 
 const TTL_MS = 120_000;
@@ -164,10 +165,9 @@ describe("CreateHoldUseCase", () => {
     ]);
     const holds = new InMemoryHoldStore(clock);
     holds.seed(TIER, 10);
-    const brokenMirror = {
+    const brokenMirror = stubHoldRepository({
       save: () => Promise.reject(new Error("postgres is down")),
-      setStatus: () => Promise.reject(new Error("postgres is down")),
-    };
+    });
     const useCase = new CreateHoldUseCase(
       events,
       holds,
@@ -194,10 +194,9 @@ describe("CreateHoldUseCase", () => {
       reserve: async () => ({ ok: true, remaining: 8 }),
       release: () => Promise.reject(new Error("redis went away")),
     });
-    const brokenMirror = {
+    const brokenMirror = stubHoldRepository({
       save: () => Promise.reject(new Error("postgres is down")),
-      setStatus: () => Promise.reject(new Error("postgres is down")),
-    };
+    });
     const useCase = new CreateHoldUseCase(
       events,
       store,

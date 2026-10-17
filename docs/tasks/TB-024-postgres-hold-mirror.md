@@ -151,6 +151,6 @@ Argue the decision I flagged as arguable before writing it down as decided. The 
 ## 8. Follow-ups left behind
 
 - [ ] TB-025: fold `test/integration/main/hold-mirror.test.ts` into `composition.test.ts` through `POST /holds` and `DELETE /holds/:token`, and delete it. Also: **who seeds the live counters** (still open).
-- [ ] TB-026: the sweeper's script must tolerate a hold with no row to mark.
+- [ ] TB-026: the sweeper's script must tolerate a hold with no row to mark. A failed compensating release leaves no log line (its error is swallowed; L2 has no logging port), so "hold with no row" is observable only from the sweeper's side until something in L2 can log.
 - [ ] TB-027: reconcile must not rebuild the live counter from rows alone while holds with no row can be alive (ADR 0004 row 1), and must expire rows whose hold is gone (row 2).
 - [ ] TB-029: the hold's `converted` status belongs in the order's transaction (TB-007 decision 10); ADR 0004's "after Redis" rule then applies to the whole transaction.

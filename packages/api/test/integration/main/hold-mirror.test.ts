@@ -61,8 +61,9 @@ afterEach(async () => {
 describe("a hold, in both stores", () => {
   it("is reserved in Redis and mirrored as an active row; released in Redis and marked released", async () => {
     const clock = new FakeClock("2026-01-01T10:00:00.000Z");
+    const events = new PgEventRepository(db);
     const create = new CreateHoldUseCase(
-      new PgEventRepository(db),
+      events,
       store,
       mirror,
       clock,
@@ -71,7 +72,6 @@ describe("a hold, in both stores", () => {
     );
     const release = new ReleaseHoldUseCase(store, mirror);
 
-    const events = new PgEventRepository(db);
     const computed = async (): Promise<number | undefined> =>
       (await events.findById(JAZZ))?.tiers.find((tier) => tier.id === GENERAL)?.remaining;
 

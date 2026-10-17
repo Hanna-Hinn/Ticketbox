@@ -6,6 +6,7 @@ import { aHold } from "../../../fakes/builders.js";
 import { FakeClock } from "../../../fakes/FakeClock.js";
 import { InMemoryHoldRepository } from "../../../fakes/InMemoryHoldRepository.js";
 import { InMemoryHoldStore } from "../../../fakes/InMemoryHoldStore.js";
+import { stubHoldRepository } from "../../../fakes/stubHoldRepository.js";
 import { stubHoldStore } from "../../../fakes/stubHoldStore.js";
 
 const TTL_MS = 120_000;
@@ -118,10 +119,9 @@ describe("ReleaseHoldUseCase", () => {
     await holds.reserve(
       aHold().forTier(TIER).withToken(TOKEN).withQty(4).createdAt(clock.now()).build(),
     );
-    const brokenMirror = {
-      save: () => Promise.reject(new Error("postgres is down")),
+    const brokenMirror = stubHoldRepository({
       setStatus: () => Promise.reject(new Error("postgres is down")),
-    };
+    });
 
     await expect(
       new ReleaseHoldUseCase(holds, brokenMirror).execute({ token: TOKEN }),
@@ -132,10 +132,7 @@ describe("ReleaseHoldUseCase", () => {
 
   it("never touches the row when the store had nothing to release, even an unreachable one", async () => {
     const store = stubHoldStore({ release: async () => ({ released: false }) });
-    const unreachableMirror = {
-      save: () => Promise.reject(new Error("must not be called")),
-      setStatus: () => Promise.reject(new Error("must not be called")),
-    };
+    const unreachableMirror = stubHoldRepository();
 
     const result = await new ReleaseHoldUseCase(store, unreachableMirror).execute({
       token: TOKEN,

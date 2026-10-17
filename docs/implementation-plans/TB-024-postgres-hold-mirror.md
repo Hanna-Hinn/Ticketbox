@@ -140,7 +140,7 @@ Postgres _is_ this. The question is the reverse one, and it is the ADR: why is t
 
 ## 8. Open questions
 
-None blocking. Decision 2 (no compensation when the mirror write fails) is the one to argue: the alternative releases the Redis hold in the same request and turns a 500 into a clean `insufficient`-shaped failure, at the cost of a second write that can fail too.
+None blocking. Decision 2 (no compensation when the mirror write fails) is the one to argue: the alternative releases the Redis hold in the same request and turns a 500 into a clean `insufficient`-shaped failure, at the cost of a second write that can fail too. _(resolved in review: argued, and reversed — see decision 2.)_
 
 ---
 
