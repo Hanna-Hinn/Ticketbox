@@ -10,7 +10,8 @@ function Screen({ path }: { path: string }): ReactNode {
   if (path === "/") return <EventListPage />;
   const event = EVENT_PATH.exec(path);
   const id = event?.[1];
-  if (id !== undefined) return <EventDetailPage id={id} />;
+  // key: /events/a → /events/b remounts instead of showing a's data under b's URL.
+  if (id !== undefined) return <EventDetailPage key={id} id={id} />;
   return (
     <p className="status">
       Nothing at <code>{path}</code>. <Link to="/">All events</Link>

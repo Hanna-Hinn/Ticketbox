@@ -14,21 +14,26 @@ export function useFetch<T>(url: string): { state: FetchState<T>; retry: () => v
 
   useEffect(() => {
     const controller = new AbortController();
+    // Every write goes through the guard: a cleaned-up effect (unmount, url
+    // change, StrictMode's first run) must not touch state on any path,
+    // including a body read that was aborted inside describeError.
+    const settle = (next: FetchState<T>): void => {
+      if (!controller.signal.aborted) setState(next);
+    };
     setState({ status: "loading" });
 
     fetch(url, { signal: controller.signal })
       .then(async (response) => {
         if (!response.ok) {
-          setState({ status: "error", message: await describeError(response) });
+          settle({ status: "error", message: await describeError(response) });
           return;
         }
         // The API's Zod serializer guarantees the shape on its side; TB-015
         // adds the client-side parse.
-        setState({ status: "loaded", data: (await response.json()) as T });
+        settle({ status: "loaded", data: (await response.json()) as T });
       })
       .catch((err: unknown) => {
-        if (controller.signal.aborted) return;
-        setState({ status: "error", message: err instanceof Error ? err.message : String(err) });
+        settle({ status: "error", message: err instanceof Error ? err.message : String(err) });
       });
 
     return () => controller.abort();
