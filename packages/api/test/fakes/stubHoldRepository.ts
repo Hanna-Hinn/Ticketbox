@@ -6,5 +6,10 @@ import type { HoldRepository } from "../../src/application/ports/HoldRepository.
 export function stubHoldRepository(overrides: Partial<HoldRepository> = {}): HoldRepository {
   const notInThisTest = (): Promise<never> =>
     Promise.reject(new Error("not expected in this test"));
-  return { save: notInThisTest, setStatus: notInThisTest, ...overrides };
+  return {
+    save: notInThisTest,
+    setStatus: notInThisTest,
+    activeTokens: notInThisTest,
+    ...overrides,
+  };
 }

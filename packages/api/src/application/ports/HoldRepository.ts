@@ -1,5 +1,6 @@
 import type { Hold } from "../../domain/entities/Hold.js";
 import type { HoldToken } from "../../domain/value-objects/HoldToken.js";
+import type { TierId } from "../../domain/value-objects/Ids.js";
 
 // The Postgres mirror of a hold (TB-024): the audit trail, never the live
 // truth. The live hold in Redis has no status — it exists or it doesn't —
@@ -14,4 +15,9 @@ export interface HoldRepository {
   /** Writes the row with status "active". */
   save(hold: Hold): Promise<void>;
   setStatus(token: HoldToken, status: HoldOutcome): Promise<void>;
+  /**
+   * Tokens of the rows still 'active' for the tier — the mirror's one read
+   * path, for reconciliation (TB-027), never for a write-path decision.
+   */
+  activeTokens(tierId: TierId): Promise<readonly HoldToken[]>;
 }

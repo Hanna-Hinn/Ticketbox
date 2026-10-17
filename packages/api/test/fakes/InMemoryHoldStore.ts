@@ -1,5 +1,6 @@
 import type { Clock } from "../../src/application/ports/Clock.js";
 import type { ExpiredHold, HoldStore, SweepResult } from "../../src/application/ports/HoldStore.js";
+import type { HeldEntry, InventoryRepair } from "../../src/application/ports/InventoryRepair.js";
 import type { Hold } from "../../src/domain/entities/Hold.js";
 import type { HoldToken } from "../../src/domain/value-objects/HoldToken.js";
 import type { TierId } from "../../src/domain/value-objects/Ids.js";
@@ -18,9 +19,16 @@ import type { TierId } from "../../src/domain/value-objects/Ids.js";
 // test-authoring bug the fake should make loud: a reused token throws even
 // if the earlier hold has expired (Redis would accept the write on a
 // vanished key).
-export class InMemoryHoldStore implements HoldStore {
+export class InMemoryHoldStore implements HoldStore, InventoryRepair {
   private readonly remaining = new Map<TierId, number>();
   private readonly holds = new Map<HoldToken, Hold>();
+  // What an eviction does to one key and not another, for reconciliation's
+  // tests: a hash gone while its index entry stays (evictHash — find()
+  // answers null, held() and expired() still list it), or a tier's whole
+  // index gone while its hashes live (evictIndex — held() and expired()
+  // list nothing, find() still answers).
+  private readonly evictedHashes = new Set<HoldToken>();
+  private readonly evictedIndexes = new Set<TierId>();
 
   constructor(private readonly clock: Clock) {}
 
@@ -68,18 +76,19 @@ export class InMemoryHoldStore implements HoldStore {
   }
 
   async find(token: HoldToken): Promise<Hold | null> {
+    if (this.evictedHashes.has(token)) return null;
     return this.live(token);
   }
 
   async expired(now: Date): Promise<readonly ExpiredHold[]> {
     return [...this.holds.values()]
-      .filter((hold) => hold.isExpired(now))
+      .filter((hold) => hold.isExpired(now) && !this.evictedIndexes.has(hold.tierId))
       .map((hold) => ({ token: hold.token, tierId: hold.tierId, qty: hold.qty.value }));
   }
 
   async sweep(hold: ExpiredHold, now: Date): Promise<SweepResult> {
     const held = this.holds.get(hold.token);
-    if (held === undefined) return { swept: false };
+    if (held === undefined || this.evictedIndexes.has(held.tierId)) return { swept: false };
     // As strict as Redis: the real store looks up the member the argument
     // re-encodes to, so a wrong qty or tier finds nothing.
     if (held.qty.value !== hold.qty || held.tierId !== hold.tierId) return { swept: false };
@@ -90,6 +99,30 @@ export class InMemoryHoldStore implements HoldStore {
     const restored = current + held.qty.value;
     this.remaining.set(held.tierId, restored);
     return { swept: true, restored: true, remaining: restored };
+  }
+
+  async held(tierId: TierId): Promise<readonly HeldEntry[]> {
+    if (this.evictedIndexes.has(tierId)) return [];
+    return [...this.holds.values()]
+      .filter((hold) => hold.tierId === tierId)
+      .map((hold) => ({ token: hold.token, qty: hold.qty.value }));
+  }
+
+  async rebuild(tierId: TierId, remaining: number): Promise<{ before: number | null }> {
+    const before = this.remaining.get(tierId) ?? null;
+    this.remaining.set(tierId, remaining);
+    return { before };
+  }
+
+  /** Test-only: drop a hold's record the way an eviction would, keeping its index entry. */
+  evictHash(token: HoldToken): void {
+    if (!this.holds.has(token)) throw new Error(`no hold ${token} to evict`);
+    this.evictedHashes.add(token);
+  }
+
+  /** Test-only: drop a tier's whole index the way an eviction would, keeping its holds. */
+  evictIndex(tierId: TierId): void {
+    this.evictedIndexes.add(tierId);
   }
 
   private live(token: HoldToken): Hold | null {

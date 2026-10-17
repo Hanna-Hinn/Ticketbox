@@ -1,7 +1,12 @@
 import type { FastifyInstance } from "fastify";
 import pino from "pino";
 import { afterEach, describe, expect, it } from "vitest";
-import { unusedEventController, unusedHoldController, unusedStatsController } from "./support.js";
+import {
+  unusedAdminController,
+  unusedEventController,
+  unusedHoldController,
+  unusedStatsController,
+} from "./support.js";
 import { buildServer, type ServerDeps } from "../../../src/presentation/http/server.js";
 
 const ok = (): Promise<void> => Promise.resolve();
@@ -13,6 +18,7 @@ let app: FastifyInstance;
 function serverWith(checks: ServerDeps["checks"]): FastifyInstance {
   app = buildServer({
     stats: unusedStatsController(),
+    admin: unusedAdminController(),
     holds: unusedHoldController(),
     logger: pino({ level: "silent" }),
     events: unusedEventController(),

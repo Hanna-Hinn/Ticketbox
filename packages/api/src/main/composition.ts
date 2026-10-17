@@ -5,6 +5,7 @@ import { GetCacheStatsUseCase } from "../application/use-cases/GetCacheStats.js"
 import { GetHoldUseCase } from "../application/use-cases/GetHold.js";
 import { GetEventAvailabilityUseCase } from "../application/use-cases/GetEventAvailability.js";
 import { ListUpcomingEventsUseCase } from "../application/use-cases/ListUpcomingEvents.js";
+import { ReconcileEventUseCase } from "../application/use-cases/ReconcileEvent.js";
 import { ReleaseExpiredHoldsUseCase } from "../application/use-cases/ReleaseExpiredHolds.js";
 import { ReleaseHoldUseCase } from "../application/use-cases/ReleaseHold.js";
 import { PgEventRepository } from "../infrastructure/postgres/PgEventRepository.js";
@@ -16,6 +17,7 @@ import { RedisHoldStore } from "../infrastructure/redis/RedisHoldStore.js";
 import { closeRedisClient, createRedisClient } from "../infrastructure/redis/client.js";
 import { SystemClock } from "../infrastructure/system/SystemClock.js";
 import { UuidTokenGenerator } from "../infrastructure/system/UuidTokenGenerator.js";
+import { AdminController } from "../presentation/http/controllers/AdminController.js";
 import { EventController } from "../presentation/http/controllers/EventController.js";
 import { HoldController } from "../presentation/http/controllers/HoldController.js";
 import { StatsController } from "../presentation/http/controllers/StatsController.js";
@@ -46,8 +48,9 @@ export function compose(config: Config): System {
   // EventRepository: Postgres computes, Redis remembers the answer for 300 s
   // (TB-018). Only this line knows there is a cache.
   const cacheStats = new RedisCacheStats(redis, log.child({ component: "cache-stats" }));
+  const pgEvents = new PgEventRepository(pool);
   const events = new CachedEventRepository(
-    new PgEventRepository(pool),
+    pgEvents,
     redis,
     cacheStats, // CacheStatsRecorder
     log.child({ component: "event-cache" }),
@@ -76,11 +79,15 @@ export function compose(config: Config): System {
   const getHold = new GetHoldUseCase(holds, clock);
   const releaseHold = new ReleaseHoldUseCase(holds, holdMirror);
   const sweeper = new ReleaseExpiredHoldsUseCase(holds, holdMirror, clock);
+  // Reconcile reads Postgres, never the cache: a five-minute-old computed
+  // count written over the live counter would be reconciliation in reverse.
+  const reconcile = new ReconcileEventUseCase(pgEvents, holds, holdMirror); // InventoryRepair
 
   // HTTP
   const controller = new EventController(listUpcoming, getAvailability);
   const holdController = new HoldController(createHold, getHold, releaseHold);
   const stats = new StatsController(getCacheStats);
+  const admin = new AdminController(reconcile);
   const checks = {
     postgres: async (): Promise<void> => {
       await pool.query("SELECT 1");
@@ -94,6 +101,7 @@ export function compose(config: Config): System {
     events: controller,
     holds: holdController,
     stats,
+    admin,
     checks,
   });
 

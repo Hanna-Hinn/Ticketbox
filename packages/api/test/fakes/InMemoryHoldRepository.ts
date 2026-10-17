@@ -5,6 +5,7 @@ import type {
 } from "../../src/application/ports/HoldRepository.js";
 import type { Hold } from "../../src/domain/entities/Hold.js";
 import type { HoldToken } from "../../src/domain/value-objects/HoldToken.js";
+import type { TierId } from "../../src/domain/value-objects/Ids.js";
 
 // The audit trail on a Map, with the two rules the real table enforces: a
 // token is saved once (the primary key), and a row only ever leaves
@@ -21,6 +22,12 @@ export class InMemoryHoldRepository implements HoldRepository {
     const row = this.rows.get(token);
     if (row === undefined || row.status !== "active") return;
     row.status = status;
+  }
+
+  async activeTokens(tierId: TierId): Promise<readonly HoldToken[]> {
+    return [...this.rows.values()]
+      .filter((row) => row.status === "active" && row.hold.tierId === tierId)
+      .map((row) => row.hold.token);
   }
 
   statusOf(token: HoldToken): HoldStatus | undefined {

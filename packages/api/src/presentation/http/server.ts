@@ -3,10 +3,12 @@ import Fastify, { type FastifyBaseLogger, type FastifyInstance } from "fastify";
 import { serializerCompiler, validatorCompiler } from "fastify-type-provider-zod";
 import type { EventController } from "./controllers/EventController.js";
 import type { HoldController } from "./controllers/HoldController.js";
+import type { AdminController } from "./controllers/AdminController.js";
 import type { StatsController } from "./controllers/StatsController.js";
 import { registerErrorHandling } from "./errors.js";
 import { registerEventRoutes } from "./routes/events.js";
 import { registerHoldRoutes } from "./routes/holds.js";
+import { registerAdminRoutes } from "./routes/admin.js";
 import { registerStatsRoutes } from "./routes/stats.js";
 import {
   DEFAULT_CHECK_TIMEOUT_MS,
@@ -19,6 +21,7 @@ export interface ServerDeps {
   readonly events: EventController;
   readonly holds: HoldController;
   readonly stats: StatsController;
+  readonly admin: AdminController;
   readonly checks: DependencyChecks;
   // Only a test has a reason to set this: a tiny real bound beats a 2 s wait.
   readonly healthCheckTimeoutMs?: number;
@@ -59,6 +62,7 @@ export function buildServer(deps: ServerDeps): FastifyInstance {
   registerEventRoutes(app, deps.events);
   registerHoldRoutes(app, deps.holds);
   registerStatsRoutes(app, deps.stats);
+  registerAdminRoutes(app, deps.admin);
   registerHealthRoutes(app, deps.checks, deps.healthCheckTimeoutMs ?? DEFAULT_CHECK_TIMEOUT_MS);
   return app;
 }
