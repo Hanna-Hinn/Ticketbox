@@ -115,6 +115,21 @@ describe("CachedEventRepository against Redis", () => {
     },
   );
 
+  it.each([1, 2, 3, 4, 5])(
+    "fifty concurrent reads of a cold unknown id reach the inner repository exactly once (run %i)",
+    async () => {
+      const reads = Array.from({ length: 50 }, () => repo.findById(UNKNOWN));
+
+      const events = await Promise.all(reads);
+
+      expect(events.every((event) => event === null)).toBe(true);
+      expect(inner.calls).toBe(1);
+      const ttlMs = await redis.pttl(keys.eventCache(UNKNOWN));
+      expect(ttlMs).toBeGreaterThan(0);
+      expect(ttlMs).toBeLessThanOrEqual(NEGATIVE_TTL_SECONDS * 1000);
+    },
+  );
+
   it("takes the refresh mutex with a bounded lifetime", async () => {
     await repo.findById(JAZZ);
 

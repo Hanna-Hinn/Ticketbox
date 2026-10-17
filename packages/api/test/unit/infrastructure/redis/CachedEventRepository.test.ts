@@ -226,6 +226,73 @@ describe("CachedEventRepository", () => {
     expect(cache.entries.has(keys.eventCache(DEFAULT_EVENT_ID))).toBe(false);
   });
 
+  it("as a loser whose cache breaks mid-wait, reads through promptly and caches nothing", async () => {
+    vi.useFakeTimers();
+    const { repo, inner, cache } = world();
+    cache.entries.set(keys.eventRefresh(DEFAULT_EVENT_ID), { value: "1", ttlMs: REFRESH_MUTEX_MS });
+
+    const pending = repo.findById(DEFAULT_EVENT_ID);
+    await vi.advanceTimersByTimeAsync(REFRESH_POLL_MS * 3);
+    cache.failing = true;
+    await vi.advanceTimersByTimeAsync(REFRESH_POLL_MS);
+
+    expect((await pending)?.name).toBe("Rooftop Jazz Night");
+    expect(inner.calls).toBe(1);
+    expect(cache.entries.has(keys.eventCache(DEFAULT_EVENT_ID))).toBe(false);
+  });
+
+  it("when the winner's write fails, every loser reads through once the mutex lifetime is up", async () => {
+    vi.useFakeTimers();
+    const { repo, inner, cache } = world();
+    const originalSet = cache.set.bind(cache);
+    // The mutex SET succeeds; only the event write fails.
+    cache.set = async (key, value, token, amount, nx) => {
+      if (key === keys.eventCache(DEFAULT_EVENT_ID)) throw new Error("Connection is closed.");
+      return originalSet(key, value, token, amount, nx);
+    };
+
+    const reads = [1, 2, 3].map(() => repo.findById(DEFAULT_EVENT_ID));
+    await vi.advanceTimersByTimeAsync(REFRESH_MUTEX_MS - REFRESH_POLL_MS);
+    expect(inner.calls).toBe(1);
+    await vi.advanceTimersByTimeAsync(REFRESH_POLL_MS * 2);
+
+    const events = await Promise.all(reads);
+    expect(events.every((event) => event?.name === "Rooftop Jazz Night")).toBe(true);
+    expect(inner.calls).toBe(3);
+  });
+
+  it("a read right after invalidation waits out the refresh mutex, then reads through uncached", async () => {
+    // Decision 1 of the plan: the mutex is not released, it expires. The
+    // first read after an invalidation within its lifetime pays for that;
+    // TB-031's compare-and-delete turns this test red.
+    vi.useFakeTimers();
+    const { repo, inner, cache } = world();
+    await repo.findById(DEFAULT_EVENT_ID);
+    await repo.invalidate(DEFAULT_EVENT_ID);
+
+    let settled = false;
+    const pending = repo.findById(DEFAULT_EVENT_ID).then((event) => {
+      settled = true;
+      return event;
+    });
+    await vi.advanceTimersByTimeAsync(REFRESH_MUTEX_MS - REFRESH_POLL_MS);
+    expect(settled).toBe(false);
+    await vi.advanceTimersByTimeAsync(REFRESH_POLL_MS * 2);
+
+    expect((await pending)?.name).toBe("Rooftop Jazz Night");
+    expect(inner.calls).toBe(2);
+    expect(cache.entries.has(keys.eventCache(DEFAULT_EVENT_ID))).toBe(false);
+  });
+
+  it("counts an unreachable cache as a miss", async () => {
+    const { repo, stats, cache } = world();
+    cache.failing = true;
+
+    await repo.findById(DEFAULT_EVENT_ID);
+
+    expect(stats).toMatchObject({ hits: 0, misses: 1 });
+  });
+
   it("skips the cache entirely while the client is not ready", async () => {
     const { repo, inner, cache } = world();
     cache.status = "reconnecting";
