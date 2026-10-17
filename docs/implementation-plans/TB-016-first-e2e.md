@@ -50,8 +50,9 @@ goto /                              → [data-testid="event-list"] visible, 3 ×
 click the first card's link          → URL /events/11111111-1111-4111-8111-111111111111 (the seeded jazz id)
                                      → 3 × [data-testid="tier-row"]
                                      → [data-testid="tier-remaining"] texts === ["1000 of 1000", "200 of 200", "Sold out"]
-                                     → performance navigation entries === 1  (in-app navigation, no reload)
-throughout                           → zero console messages of type "error"
+                                     → ~~performance navigation entries === 1~~ _(review, Critical: that count is 1 after a reload too — a per-document value)_
+                                     → exactly one document `load` event for the whole journey (a full navigation fires one, pushState does not)
+throughout                           → zero console messages of type "error" and zero `pageerror`s _(review: an uncaught exception is not a console message)_
 ```
 
 Selectors are `data-testid` only (the frontend brief's rule; TB-014 put them on the list, card, tier row and remaining cell). The three exact strings are the acceptance of "three tiers with availability numbers": the seed is fixed (`SEED_EVENTS`), the jazz event has 1000/200/0, and the string form is what TB-014's task doc recorded from the browser.
@@ -59,7 +60,7 @@ Selectors are `data-testid` only (the frontend brief's rule; TB-014 put them on 
 ### Decisions this plan is making
 
 1. **`@playwright/test` pinned to `1.56.1`, not the registry's `1.64.1`.** The session's container ships Chromium build 1194 at `/opt/pw-browsers`, which is the browser `1.56.1` expects, and `PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1` is set there; pinning the matching runner means the suite runs locally with no download and no `executablePath` hack in the config. CI installs the same build with `playwright install --with-deps chromium`. Bumping is one version change plus a browser install, and the task doc says so. The alternative — pin latest and special-case the container's browser path in config — couples the repo to one machine.
-2. **Playwright starts nothing; it `reuseExistingServer`s both.** The config's `webServer` entries point at the API's `/health` and the web root with `reuseExistingServer: true` and a short timeout, so locally the test fails fast with "server not reachable" rather than silently booting a second stack with the wrong database, and in CI the servers the smoke step already started are reused. Starting Postgres from Playwright would make "against the compose stack" untrue.
+2. **Playwright starts nothing; it `reuseExistingServer`s both.** The config's `webServer` entries point at ~~the API's `/health`~~ _(review, Major: the browser only reaches the API through Vite's proxy, so the gate is `WEB_URL/api/health` — one URL proves web server, proxy rule and API, and the `E2E_API_URL` knob nobody set is gone)_ and the web root with `reuseExistingServer: true` and a short timeout, so locally the test fails fast with "server not reachable" rather than silently booting a second stack with the wrong database, and in CI the servers the smoke step already started are reused. Starting Postgres from Playwright would make "against the compose stack" untrue.
 3. **Chromium only.** One project, headless. Three browsers would triple the slowest level's time for a read-path spec that tests wiring, not rendering engines.
 4. **No retries.** TB-037's Scope says "fix flakes properly — no retries masking a real race"; a `retries: 0` baseline is what makes TB-037 meaningful. `trace: "retain-on-failure"` so a red run in CI leaves something to read.
 5. **Smoke #6 becomes real in this task.** CI now runs the web dev server for Playwright, so "the web app's root HTML is served" is answerable: `GET SMOKE_WEB_URL/` is 200, `text/html`, and the body contains `<div id="root">`. `SMOKE_WEB_URL` defaults to `http://localhost:5173`; locally smoke needs `pnpm dev:web` running, which the test's name says. The todo was re-pointed from TB-014 to TB-016 for exactly this.
@@ -75,17 +76,18 @@ None.
 
 ## 4. Files
 
-| File                                           | New / Changed                                                |
-| ---------------------------------------------- | ------------------------------------------------------------ |
-| `packages/web/playwright.config.ts`            | New                                                          |
-| `packages/web/e2e/e2e-1-browse-events.spec.ts` | New                                                          |
-| `packages/web/package.json`                    | Changed — `@playwright/test`, `test:e2e`                     |
-| `packages/web/tsconfig.test.json`              | Changed — include `e2e/**`, `playwright.config.ts`           |
-| `packages/api/test/smoke/smoke.test.ts`        | Changed — smoke #6 real, `SMOKE_WEB_URL`                     |
-| `.github/workflows/ci.yml`                     | Changed — web server, `SMOKE_WEB_URL`, Chromium install, E2E |
-| root `package.json`                            | Changed — `test:e2e`                                         |
-| `.gitignore`                                   | Changed — `test-results/`, `playwright-report/`              |
-| `pnpm-lock.yaml`                               | Changed                                                      |
+| File                                                            | New / Changed                                                                                                                              |
+| --------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
+| `packages/web/playwright.config.ts`                             | New                                                                                                                                        |
+| `packages/web/e2e/e2e-1-browse-events.spec.ts`                  | New                                                                                                                                        |
+| `packages/web/package.json`                                     | Changed — `@playwright/test`, `test:e2e`                                                                                                   |
+| `packages/web/tsconfig.test.json`                               | Changed — include `e2e/**`, `playwright.config.ts`                                                                                         |
+| `packages/api/test/smoke/smoke.test.ts`                         | Changed — smoke #6 real, `SMOKE_WEB_URL`                                                                                                   |
+| `.github/workflows/ci.yml`                                      | Changed — web server, Chromium install (right after `pnpm install`, per review), E2E; `SMOKE_WEB_URL` not set — the default is right in CI |
+| root `package.json`                                             | Changed — `test:e2e`                                                                                                                       |
+| `.gitignore`                                                    | Changed — `test-results/` only _(review: no reporter here writes `playwright-report/`)_                                                    |
+| `packages/api/vitest.smoke.config.ts`, `CLAUDE.md`, `README.md` | Changed _(review)_ — smoke now needs the web app too; the three places that said "api running" say so                                      |
+| `pnpm-lock.yaml`                                                | Changed                                                                                                                                    |
 
 ---
 
@@ -105,7 +107,7 @@ None.
 ## 6. Risks and failure modes
 
 - **What if Redis is down?** Nothing on the read path touches Redis yet.
-- **What if Postgres is down?** `/health` is 503, so Playwright's API `webServer` check fails before any spec runs, with that URL in the message.
+- **What if Postgres is down?** `/health` is 503, so Playwright's API `webServer` check fails before any spec runs. _(review, Major)_ The message cannot tell "not started" from "health check failing" — it now says both, with the URL.
 - **What if a key is evicted under `allkeys-lru`?** N/A.
 - **What if this operation runs twice?** Reads only; two E2E runs share nothing but the seed.
 - **What if it dies halfway through?** A failed spec leaves a trace in `test-results/`, ignored by git.
