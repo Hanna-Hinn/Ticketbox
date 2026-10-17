@@ -1,6 +1,6 @@
 # TB-020 — Hold use cases against in-memory fakes
 
-**Status:** Approved
+**Status:** Implemented — see [`docs/tasks/TB-020-hold-use-cases.md`](../tasks/TB-020-hold-use-cases.md) §3 for where reality diverged
 **Date:** 2026-10-17
 **Task:** TB-020 (`docs/02-product-delivery-plan.md`)
 **Branch:** `feat/TB-020-hold-use-cases` (stacked on `spike/TB-019a-cache-invalidation-failures`, which is docs-only on top of `feat/TB-019-stampede-negative-cache-stats`)
@@ -156,3 +156,11 @@ What `GET /holds/:token` must carry for the checkout page's order summary (tier 
 - ☑ Task doc — `docs/tasks/TB-020-hold-use-cases.md`
 - ☐ Benchmark entry — nothing measurable changed
 - ☐ NOTES entry — not a SPIKE task
+
+---
+
+## 10. Amendments after implementation
+
+- **§4:** `infrastructure/system/UnconfiguredHoldStore.ts`, not `composition.ts`, is where the placeholder lives (corrected before coding); `stats.test.ts` was a fourth http call site; `stubHoldStore.ts` and `HoldLifecycle.test.ts` were added in Phase 4 on the review's findings.
+- **§5:** two invariants the plan carried as comments — `GetHold` reads the clock after the lookup; `ReleaseHold` makes one call — were found untested by the reviewer's sabotages and are tests now. The lifecycle is one test through the three use cases.
+- **Decisions 1–7:** all stood.
