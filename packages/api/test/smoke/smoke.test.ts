@@ -36,5 +36,5 @@ describe("smoke", () => {
 
   it.todo("POST /holds for 1 ticket returns 201 — TB-025 (route) over TB-022 (Lua reserve)");
   it.todo("DELETE /holds/:token returns 200 — TB-023 (release) once the route exists");
-  it.todo("the web app's root HTML is served — TB-014");
+  it.todo("the web app's root HTML is served — TB-016, once CI starts the web app for Playwright");
 });

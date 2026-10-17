@@ -1,0 +1,68 @@
+/* Tidy, not designed. One file, by rule. */
+:root {
+  font-family: system-ui, sans-serif;
+  line-height: 1.5;
+  color: #1a1a1a;
+  background: #fafafa;
+}
+
+body {
+  margin: 0;
+}
+
+main {
+  max-width: 48rem;
+  margin: 0 auto;
+  padding: 1rem;
+}
+
+header {
+  padding-bottom: 1rem;
+  border-bottom: 1px solid #ddd;
+  margin-bottom: 1rem;
+  font-weight: 600;
+}
+
+a {
+  color: #0b57d0;
+}
+
+.cards {
+  list-style: none;
+  padding: 0;
+  display: grid;
+  gap: 0.75rem;
+}
+
+.card {
+  padding: 0.75rem 1rem;
+  background: #fff;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+}
+
+.card p {
+  margin: 0.25rem 0 0;
+  color: #555;
+}
+
+.tiers {
+  width: 100%;
+  border-collapse: collapse;
+  background: #fff;
+}
+
+.tiers th,
+.tiers td {
+  text-align: left;
+  padding: 0.5rem 0.75rem;
+  border-bottom: 1px solid #ddd;
+}
+
+.status {
+  color: #555;
+}
+
+.error {
+  color: #a4262c;
+}
