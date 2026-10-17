@@ -35,7 +35,7 @@ The live count is the authority for _what is happening now_ because it is the nu
 **Bad / accepted trade-off:**
 
 - The use case cannot distinguish "never seeded" from "lost the key". After an eviction, reads show the computed count while `reserve` on the same tier answers whatever TB-022 decides for a missing key (TB-007 decision 11). Nothing logs the disagreement. This is the eviction failure mode TB-040 exists to observe, and this ADR is where it is admitted rather than hidden.
-- The computed count can be stale in the other direction too: a hold that expired in Redis but whose mirror row the sweeper has not yet marked still counts as held in Postgres. The fallback under-reports until the sweeper runs; it never over-reports.
+- The computed count can be stale in the other direction too: a hold that expired in Redis but whose mirror row the sweeper has not yet marked still counts as held in Postgres. The fallback under-reports until the sweeper runs, and over-reports by exactly the holds whose mirror write (TB-024) has not landed yet — a process that dies between `reserve` and `HoldRepository.save` leaves tickets held in Redis with no row in Postgres. TB-024's ADR owns that window.
 
 **What would make us revisit this:**
 

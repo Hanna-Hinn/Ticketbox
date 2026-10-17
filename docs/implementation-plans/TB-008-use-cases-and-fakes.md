@@ -1,6 +1,6 @@
 # TB-008 — First use cases plus in-memory fakes
 
-**Status:** Approved
+**Status:** Implemented — see [`docs/tasks/TB-008-use-cases-and-fakes.md`](../tasks/TB-008-use-cases-and-fakes.md); the Phase 3 review found `Hold.create` running after the reserve (decision 10) and turned decision 2 into ADR 0002
 **Date:** 2026-10-17
 **Task:** TB-008 (`docs/02-product-delivery-plan.md`)
 **Branch:** `feat/TB-008-use-cases-and-fakes` (stacked on `feat/TB-007-ports`)
