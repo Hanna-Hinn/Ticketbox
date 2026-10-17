@@ -87,6 +87,43 @@ describe("api client", () => {
     await expect(failure).rejects.toBe(abort);
   });
 
+  it("forwards the caller's AbortSignal to fetch, and null when there is none", async () => {
+    const seen: (AbortSignal | null | undefined)[] = [];
+    const fetchFn = (_input: string, init?: RequestInit): Promise<Response> => {
+      seen.push(init?.signal);
+      return Promise.resolve(new Response("[]", { status: 200 }));
+    };
+    const client = createApiClient(fetchFn);
+    const controller = new AbortController();
+
+    await client.listEvents(controller.signal);
+    await client.getEvent(JAZZ_ID, controller.signal);
+    await client.listEvents();
+
+    expect(seen).toEqual([controller.signal, controller.signal, null]);
+  });
+
+  it("rejects a 200 whose body is not JSON, and not as an ApiError", async () => {
+    const { fetchFn } = fetchAnswering(200, "<html>not json</html>");
+
+    const failure = createApiClient(fetchFn).listEvents();
+
+    await expect(failure).rejects.toThrow(SyntaxError);
+    await expect(failure).rejects.not.toBeInstanceOf(ApiError);
+  });
+
+  it("treats a 4xx whose JSON is not the envelope as a status-only failure", async () => {
+    const { fetchFn } = fetchAnswering(422, JSON.stringify({ message: "x" }));
+
+    const failure = createApiClient(fetchFn).getEvent(JAZZ_ID);
+
+    await expect(failure).rejects.toMatchObject({
+      status: 422,
+      code: "HTTP_422",
+      message: "no error details",
+    });
+  });
+
   it("passes a transport failure through untouched", async () => {
     const down = new TypeError("fetch failed");
 
