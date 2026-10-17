@@ -334,12 +334,12 @@ Keyspace size when measured: `<N>` keys.
 
 The naive `HGET`-then-`HINCRBY` implementation vs. the Lua-scripted one. 200 concurrent requests against a tier with 10 remaining.
 
-| Implementation       | Requests that "succeeded" | Final availability | Oversold by  |
-| -------------------- | ------------------------- | ------------------ | ------------ |
-| Naive (TB-021 spike) |                           |                    |              |
-| Lua (TB-022)         |                           | 0 (expected)       | 0 (expected) |
+| Implementation       | Requests that "succeeded"   | Final availability      | Oversold by                |
+| -------------------- | --------------------------- | ----------------------- | -------------------------- |
+| Naive (TB-021 spike) | **200** of 200 (qty 2 each) | **−390** (10 − 200 × 2) | **195** holds, 390 tickets |
+| Lua (TB-022)         |                             | 0 (expected)            | 0 (expected)               |
 
-**Notes:** _paste the actual numbers you saw in the spike — this is the row that justifies the whole project._
+**Notes:** Naive row measured 2026-10-17 on local Redis 7.0.15 (DB 9), six runs — three with all 200 callers on one ioredis connection, three spread over ten connections — all six identical. The store was `HGET remaining` → `if (current < qty)` in TypeScript → `HINCRBY remaining -qty` → `HSET`/`PEXPIRE` the hold; the test was `Promise.all` of 200 `reserve(tier, 2, token, 120 000)` against `remaining = 10`, asserting 5 successes and 0 remaining. Every `HGET` read 10 before any `HINCRBY` landed; every check passed. Full write-up, the store's source and the assertion output in `NOTES.md` § TB-021. The Lua row is TB-022's, with the same test.
 
 ---
 
