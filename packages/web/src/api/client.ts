@@ -6,8 +6,6 @@ import type { EventDto, EventSummaryDto } from "@ticketbox/api/src/presentation/
 // package reaches the bundle, and a DTO change fails `tsc` here instead of
 // drifting in a hand-written mirror.
 
-export type { EventDto, EventSummaryDto };
-
 // A non-2xx the API answered. `code` is the envelope's code, or HTTP_<status>
 // when the body carried no envelope (a proxy error, a crash before the handler).
 export class ApiError extends Error {
@@ -57,8 +55,9 @@ async function toApiError(response: Response): Promise<ApiError> {
   if (isErrorEnvelope(body)) {
     return new ApiError(response.status, body.error.code, body.error.message);
   }
-  // Not statusText: it is empty under HTTP/2.
-  return new ApiError(response.status, `HTTP_${response.status}`, `HTTP ${response.status}`);
+  // Not statusText: it is empty under HTTP/2. The status itself is on the
+  // error; the message says what is missing.
+  return new ApiError(response.status, `HTTP_${response.status}`, "no error details");
 }
 
 function isErrorEnvelope(body: unknown): body is ErrorDto {

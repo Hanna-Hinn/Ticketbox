@@ -73,7 +73,7 @@ describe("api client", () => {
     await expect(failure).rejects.toMatchObject({
       status: 502,
       code: "HTTP_502",
-      message: "HTTP 502",
+      message: "no error details",
     });
   });
 

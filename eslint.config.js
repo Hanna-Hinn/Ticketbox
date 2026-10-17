@@ -160,8 +160,10 @@ const webBoundaries = [
       "no-restricted-syntax": [
         "error",
         ...noImportBypass,
+        // The identifier, not the call shape: window.fetch, globalThis.fetch
+        // and `const f = fetch` are the same raw call wearing a hat.
         {
-          selector: 'CallExpression[callee.name="fetch"]',
+          selector: 'Identifier[name="fetch"]',
           message: "No raw fetch outside src/api/ — add a function to the client.",
         },
       ],
