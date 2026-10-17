@@ -27,9 +27,5 @@ export const EventResponse = EventSummaryResponse.extend({
 
 export const EventListResponse = z.array(EventSummaryResponse);
 
-export const ErrorResponse = z.object({
-  error: z.object({ code: z.string(), message: z.string() }),
-});
-
 export type EventSummaryDto = z.infer<typeof EventSummaryResponse>;
 export type EventDto = z.infer<typeof EventResponse>;

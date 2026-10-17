@@ -1,11 +1,7 @@
 import type { FastifyInstance } from "fastify";
 import type { ZodTypeProvider } from "fastify-type-provider-zod";
-import {
-  ErrorResponse,
-  EventIdParams,
-  EventListResponse,
-  EventResponse,
-} from "../../dto/events.js";
+import { ErrorResponse } from "../../dto/errors.js";
+import { EventIdParams, EventListResponse, EventResponse } from "../../dto/events.js";
 import type { EventController } from "../controllers/EventController.js";
 
 export function registerEventRoutes(app: FastifyInstance, events: EventController): void {

@@ -1,4 +1,4 @@
-import Fastify, { type FastifyInstance } from "fastify";
+import Fastify, { type FastifyInstance, type FastifyRequest } from "fastify";
 import { serializerCompiler, validatorCompiler } from "fastify-type-provider-zod";
 import type { EventController } from "./controllers/EventController.js";
 import { registerEventRoutes } from "./routes/events.js";
@@ -9,8 +9,6 @@ export interface ServerDeps {
   readonly checks: DependencyChecks;
 }
 
-const START = Symbol("requestStart");
-
 // Everything the server needs arrives through `deps`; nothing here knows
 // what is behind a controller. Logging, the correlation id and the error
 // handler are TB-012's.
@@ -19,24 +17,24 @@ export function buildServer(deps: ServerDeps): FastifyInstance {
   app.setValidatorCompiler(validatorCompiler);
   app.setSerializerCompiler(serializerCompiler);
 
-  app.decorateRequest(START, 0n);
+  // TODO(tech-debt): replace with reply.elapsedTime once TB-012 turns the
+  // logger on — Fastify only records a reply start time when a logger, an
+  // onResponse hook or a timeout exists, so under logger: false it reads 0.
+  const startedAt = new WeakMap<FastifyRequest, bigint>();
   app.addHook("onRequest", (request, _reply, done) => {
-    request[START] = process.hrtime.bigint();
+    startedAt.set(request, process.hrtime.bigint());
     done();
   });
   app.addHook("onSend", (request, reply, payload, done) => {
-    const elapsedMs = Number(process.hrtime.bigint() - request[START]) / 1_000_000;
-    reply.header("x-response-time", elapsedMs.toFixed(2));
+    const start = startedAt.get(request);
+    if (start !== undefined) {
+      const elapsedMs = Number(process.hrtime.bigint() - start) / 1_000_000;
+      reply.header("x-response-time", elapsedMs.toFixed(2));
+    }
     done(null, payload);
   });
 
   registerEventRoutes(app, deps.events);
   registerHealthRoutes(app, deps.checks);
   return app;
-}
-
-declare module "fastify" {
-  interface FastifyRequest {
-    [START]: bigint;
-  }
 }
