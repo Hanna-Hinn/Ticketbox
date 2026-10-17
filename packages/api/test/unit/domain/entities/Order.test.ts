@@ -39,6 +39,33 @@ describe("Order", () => {
     expect(order.total().cents).toBe(7500);
   });
 
+  it("keeps the client's idempotency key, and has none when the client sent none", () => {
+    const keyed = Order.create({
+      id: orderId("o-1"),
+      holdToken: holdToken("tok-1"),
+      email: "hanna@example.com",
+      items: [item("t-1", 1, 2000)],
+      createdAt,
+      idempotencyKey: "client-key-1",
+    });
+
+    expect(keyed.idempotencyKey).toBe("client-key-1");
+    expect(anOrder([item("t-1", 1, 2000)]).idempotencyKey).toBeNull();
+  });
+
+  it("rejects an empty idempotency key", () => {
+    expect(() =>
+      Order.create({
+        id: orderId("o-1"),
+        holdToken: holdToken("tok-1"),
+        email: "hanna@example.com",
+        items: [item("t-1", 1, 2000)],
+        createdAt,
+        idempotencyKey: "",
+      }),
+    ).toThrow(InvalidOrder);
+  });
+
   it("rejects an order with no items", () => {
     expect(() => anOrder([])).toThrow(InvalidOrder);
   });

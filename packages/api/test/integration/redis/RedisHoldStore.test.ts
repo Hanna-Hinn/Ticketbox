@@ -473,6 +473,102 @@ describe("RedisHoldStore.sweep (sweep_hold.lua)", () => {
   });
 });
 
+describe("RedisHoldStore.consume (consume_hold.lua)", () => {
+  it("takes the hold out — hash and index entry — and leaves the counter where it was", async () => {
+    await redis.hset(keys.tier(TIER), "remaining", 10);
+    const hold = held(2);
+    await store.reserve(hold);
+
+    const consumed = await store.consume(hold.token);
+
+    expect(consumed).toBe(true);
+    expect(await redis.exists(keys.hold(hold.token))).toBe(0);
+    expect(await redis.zcard(keys.tierHolds(TIER))).toBe(0);
+    // Sold, not released: the two tickets stay out of the counter.
+    expect(await redis.hget(keys.tier(TIER), "remaining")).toBe("8");
+  });
+
+  it("consuming twice takes once; an unknown token takes nothing", async () => {
+    await redis.hset(keys.tier(TIER), "remaining", 10);
+    const hold = held(2);
+    await store.reserve(hold);
+
+    const first = await store.consume(hold.token);
+    const second = await store.consume(hold.token);
+    const nobody = await store.consume(holdToken("tok-nobody"));
+
+    expect([first, second, nobody]).toEqual([true, false, false]);
+    expect(await redis.hget(keys.tier(TIER), "remaining")).toBe("8");
+  });
+
+  it("finds nothing to consume after a release or a sweep took the hold", async () => {
+    await redis.hset(keys.tier(TIER), "remaining", 10);
+    const released = held(2, "tok-released");
+    await store.reserve(released);
+    await store.release(released.token);
+    await expiredHold(3, "tok-swept");
+    await store.sweep({ token: holdToken("tok-swept"), tierId: TIER, qty: 3 }, new Date());
+
+    expect(await store.consume(released.token)).toBe(false);
+    expect(await store.consume(holdToken("tok-swept"))).toBe(false);
+    expect(await redis.hget(keys.tier(TIER), "remaining")).toBe("10");
+  });
+
+  it("leaves nothing for the sweeper or a release after it: a sold ticket is never restored", async () => {
+    // ADR 0006's constraint on this task: the entry goes with the hash, so
+    // the sweeper's receipt is gone too.
+    await redis.hset(keys.tier(TIER), "remaining", 10);
+    const hold = held(2);
+    await store.reserve(hold);
+    const atExpiry = new Date(hold.expiresAt.getTime());
+
+    await store.consume(hold.token);
+    const swept = await store.sweep({ token: hold.token, tierId: TIER, qty: 2 }, atExpiry);
+    const released = await store.release(hold.token);
+
+    expect(swept).toEqual({ swept: false });
+    expect(released).toEqual({ released: false });
+    expect(await redis.hget(keys.tier(TIER), "remaining")).toBe("8");
+  });
+
+  it("the script itself: a tier that is not the hold's is nothing to consume", async () => {
+    await redis.hset(keys.tier(TIER), "remaining", 10);
+    const hold = held(2);
+    await store.reserve(hold);
+
+    const reply = await redis.consumeHold(
+      keys.hold(hold.token),
+      keys.tierHolds(OTHER),
+      hold.token,
+      OTHER,
+    );
+
+    expect(reply).toBe(-1);
+    expect(await redis.exists(keys.hold(hold.token))).toBe(1);
+    expect(await redis.zcard(keys.tierHolds(TIER))).toBe(1);
+  });
+
+  it("throws on a hold with no qty, and has touched nothing", async () => {
+    // The member is built before the removes: an error leaves the hash and
+    // the entry, as the sibling scripts promise.
+    await redis.hset(keys.hold(holdToken("tok-odd")), { tierId: TIER });
+    await redis.zadd(keys.tierHolds(TIER), "1", "tok-odd:2");
+
+    await expect(store.consume(holdToken("tok-odd"))).rejects.toThrow();
+
+    expect(await redis.exists(keys.hold(holdToken("tok-odd")))).toBe(1);
+    expect(await redis.zcard(keys.tierHolds(TIER))).toBe(1);
+  });
+
+  it("fails fast on a client that is not connected", async () => {
+    const disconnected = new Redis(testRedisUrl(), { lazyConnect: true });
+    const offline = new RedisHoldStore(disconnected, pino({ level: "silent" }));
+
+    await expect(offline.consume(holdToken("tok-1"))).rejects.toThrow(/cannot consume/);
+    disconnected.disconnect();
+  });
+});
+
 describe("RedisHoldStore as InventoryRepair (held, rebuild)", () => {
   it("lists every entry of the tier with its quantity, expired-but-unswept included, and no other tier's", async () => {
     await redis.hset(keys.tier(TIER), "remaining", 10);

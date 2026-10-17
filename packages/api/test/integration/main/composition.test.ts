@@ -48,7 +48,7 @@ beforeEach(async () => {
   await redis.flushdb();
   // Every test owns its rows too: a hold left by the previous case would be
   // a row with no hash here, which is exactly what reconcile looks for.
-  await db.query("DELETE FROM holds");
+  await db.query("TRUNCATE order_items, orders, holds");
   // What `pnpm seed` does for dev and CI (TB-025): the live counters.
   await seedLiveCounters(
     redis,
@@ -352,6 +352,85 @@ describe("compose", () => {
         before: 998,
         after: 1000,
       });
+    });
+  });
+
+  describe("POST /orders", () => {
+    const jazz = "11111111-1111-4111-8111-111111111111";
+    const general = tierId("11111111-1111-4111-8111-aaaaaaaaaaaa");
+    const remainingOf = async (): Promise<number | undefined> =>
+      (await system.app.inject({ url: `/events/${jazz}` }))
+        .json<{ tiers: { id: string; remaining: number }[] }>()
+        .tiers.find((t) => t.id === general)?.remaining;
+    const hold = async (): Promise<string> =>
+      (
+        await system.app.inject({
+          method: "POST",
+          url: "/holds",
+          payload: { eventId: jazz, tierId: general, qty: 2 },
+        })
+      ).json<{ token: string }>().token;
+    const confirm = (token: string): Promise<{ statusCode: number; json<T = unknown>(): T }> =>
+      system.app.inject({
+        method: "POST",
+        url: "/orders",
+        payload: { holdToken: token, email: "hanna@example.com" },
+      });
+
+    it("sells the held tickets: the order lands, the row says converted, the hold is gone, the number does not move", async () => {
+      const token = await hold();
+      const whileHeld = await remainingOf();
+
+      const confirmed = await confirm(token);
+      const afterwards = await remainingOf();
+      const row = await db.query<{ status: string }>("SELECT status FROM holds WHERE token = $1", [
+        token,
+      ]);
+      const order = await db.query<{ total_cents: number }>(
+        "SELECT total_cents FROM orders WHERE hold_token = $1",
+        [token],
+      );
+      const fetched = await system.app.inject({ url: `/holds/${token}` });
+      const again = await confirm(token);
+      const swept = await system.sweeper.execute();
+      const reconciled = await system.app.inject({
+        method: "POST",
+        url: `/_admin/reconcile/${jazz}`,
+      });
+
+      expect(confirmed.statusCode).toBe(201);
+      expect(confirmed.json()).toMatchObject({ holdToken: token, totalCents: 4000 });
+      expect(whileHeld).toBe(998);
+      expect(afterwards).toBe(998);
+      expect(await redis.hget(keys.tier(general), "remaining")).toBe("998");
+      expect(row.rows[0]?.status).toBe("converted");
+      expect(order.rows[0]?.total_cents).toBe(4000);
+      expect(fetched.statusCode).toBe(404);
+      expect(again.statusCode).toBe(410);
+      expect(swept).toEqual({ swept: 0, restored: 0, unmarked: [] });
+      expect(reconciled.json()).toMatchObject({ rowsExpired: 0, unrecorded: [] });
+      expect(await redis.hget(keys.tier(general), "remaining")).toBe("998");
+    });
+
+    it("a hold reconcile expired between the consume and the record cannot be confirmed; the tickets are back on sale", async () => {
+      // The window ADR 0007 names, replayed by hand: after the consume the
+      // hold is gone from both keys, which is reconcile's own test.
+      const token = await hold();
+      await redis.del(keys.hold(holdToken(token)));
+      await redis.zrem(keys.tierHolds(general), `${token}:2`);
+      await system.app.inject({ method: "POST", url: `/_admin/reconcile/${jazz}` });
+
+      const confirmed = await confirm(token);
+      const row = await db.query<{ status: string }>("SELECT status FROM holds WHERE token = $1", [
+        token,
+      ]);
+
+      expect(confirmed.statusCode).toBe(410);
+      expect(row.rows[0]?.status).toBe("expired");
+      expect(await redis.hget(keys.tier(general), "remaining")).toBe("1000");
+      expect((await db.query("SELECT 1 FROM orders WHERE hold_token = $1", [token])).rowCount).toBe(
+        0,
+      );
     });
   });
 

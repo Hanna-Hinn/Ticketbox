@@ -38,6 +38,33 @@ describe("smoke", () => {
     expect(await response.json()).toMatchObject({ id: seededEventId });
   });
 
+  it("POST /orders on a fresh hold is 201: a ticket is sold for good (on the second seed event, which no E2E reads)", async () => {
+    // A sale cannot be undone, and the E2E suite reads the first event's
+    // numbers; the sale lands on the second event, one ticket per run.
+    const secondEvent = SEED_EVENTS[1];
+    const tier = secondEvent?.tiers[0];
+    if (secondEvent === undefined || tier === undefined)
+      throw new Error("the seed has no second event");
+    const created = await fetch(`${baseUrl}/holds`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ eventId: secondEvent.id, tierId: tier.id, qty: 1 }),
+    });
+    const hold: unknown = await created.json();
+    const token =
+      typeof hold === "object" && hold !== null && "token" in hold ? String(hold.token) : "";
+
+    const confirmed = await fetch(`${baseUrl}/orders`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ holdToken: token, email: "smoke@example.com" }),
+    });
+
+    expect(created.status).toBe(201);
+    expect(confirmed.status).toBe(201);
+    expect(await confirmed.json()).toMatchObject({ holdToken: token, totalCents: tier.priceCents });
+  });
+
   it("POST /holds for 1 ticket is 201, and the hold is released again afterwards", async () => {
     // The seed wrote the live counters (TB-025); releasing leaves them as
     // they were for the next suite.

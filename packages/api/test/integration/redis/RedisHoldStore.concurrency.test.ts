@@ -102,6 +102,51 @@ describe("two sweepers over the same 10 expired holds", () => {
   );
 });
 
+describe("50 concurrent confirms of the same hold", () => {
+  it.each(Array.from({ length: 10 }, (_, i) => i + 1))(
+    "sell it exactly once, and never give it back (run %i)",
+    async () => {
+      await redis.hset(keys.tier(TIER), "remaining", 10);
+      const hold = aHold().forTier(TIER).withToken("tok-1").withQty(4).build();
+      await store.reserve(hold);
+
+      const results = await Promise.all(
+        Array.from({ length: 50 }, () => store.consume(hold.token)),
+      );
+
+      expect(results.filter(Boolean)).toHaveLength(1);
+      expect(await redis.hget(keys.tier(TIER), "remaining")).toBe("6");
+      expect(await redis.exists(keys.hold(hold.token))).toBe(0);
+      expect(await redis.zcard(keys.tierHolds(TIER))).toBe(0);
+    },
+  );
+});
+
+// At the expiry instant the confirm and the sweeper want the same hold.
+// Whoever runs first wins; the counter ends at 10 (the sweep won, tickets
+// back) or 6 (the confirm won, tickets sold) — never 14.
+describe("a confirm racing the sweeper on a hold at its expiry", () => {
+  it.each(Array.from({ length: 10 }, (_, i) => i + 1))(
+    "has exactly one winner and the counter never gains twice (run %i)",
+    async () => {
+      await redis.hset(keys.tier(TIER), "remaining", 10);
+      const hold = aHold().forTier(TIER).withToken("tok-1").withQty(4).build();
+      await store.reserve(hold);
+      const atExpiry = new Date(hold.expiresAt.getTime());
+
+      const [consumed, swept] = await Promise.all([
+        store.consume(hold.token),
+        store.sweep({ token: hold.token, tierId: TIER, qty: 4 }, atExpiry),
+      ]);
+
+      expect([consumed, swept.swept].filter(Boolean)).toHaveLength(1);
+      expect(await redis.hget(keys.tier(TIER), "remaining")).toBe(consumed ? "6" : "10");
+      expect(await redis.exists(keys.hold(hold.token))).toBe(0);
+      expect(await redis.zcard(keys.tierHolds(TIER))).toBe(0);
+    },
+  );
+});
+
 // Also the only test that exercises the script's own compare through the
 // adapter: every sequential release is answered by the adapter's prelude
 // read before the script runs. Do not trim the runs.

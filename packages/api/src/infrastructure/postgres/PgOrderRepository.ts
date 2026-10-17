@@ -50,10 +50,14 @@ export class PgOrderRepository implements OrderRepository {
       await client.query("COMMIT");
       client.release();
     } catch (err: unknown) {
-      // release(err): a client whose ROLLBACK could not be confirmed is not
-      // handed back to the pool mid-transaction.
-      await client.query("ROLLBACK").catch(() => undefined);
-      client.release(err instanceof Error ? err : new Error(String(err)));
+      // A client whose ROLLBACK could not be confirmed is not handed back to
+      // the pool mid-transaction; one that rolled back cleanly is reusable —
+      // a refused idempotency key must not cost the pool a connection.
+      const rolledBack = await client.query("ROLLBACK").then(
+        () => true,
+        () => false,
+      );
+      client.release(rolledBack ? undefined : new Error("rollback failed"));
       throw translate(err);
     }
   }

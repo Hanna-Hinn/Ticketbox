@@ -70,6 +70,42 @@ describe("runMigrations", () => {
     ]);
   });
 
+  it("names the idempotency constraint and lets it admit any number of NULLs", async () => {
+    await runMigrations(client, migrationsDir);
+    const constraint = await client.query<{ conname: string }>(
+      "SELECT conname FROM pg_constraint WHERE conname = 'orders_idempotency_key_key'",
+    );
+    await client.query(
+      `INSERT INTO events (id, name, venue, starts_at) VALUES ('11111111-1111-4111-8111-111111111111', 'e', 'v', now())`,
+    );
+    await client.query(
+      `INSERT INTO ticket_tiers (id, event_id, name, price_cents, total_qty) VALUES ('11111111-1111-4111-8111-aaaaaaaaaaaa', '11111111-1111-4111-8111-111111111111', 't', 1, 1)`,
+    );
+    const hold = (token: string): Promise<unknown> =>
+      client.query(
+        `INSERT INTO holds (token, tier_id, qty, status, expires_at) VALUES ($1, '11111111-1111-4111-8111-aaaaaaaaaaaa', 1, 'converted', now())`,
+        [token],
+      );
+    const order = (id: string, token: string, key: string | null): Promise<unknown> =>
+      client.query(
+        `INSERT INTO orders (id, hold_token, email, total_cents, idempotency_key) VALUES ($1, $2, 'e@x.io', 0, $3)`,
+        [id, token, key],
+      );
+    await hold("a");
+    await hold("b");
+    await hold("c");
+    await order("22222222-2222-4222-8222-000000000001", "a", null);
+    await order("22222222-2222-4222-8222-000000000002", "b", null);
+
+    await expect(order("22222222-2222-4222-8222-000000000003", "c", "k")).resolves.toBeDefined();
+    await hold("d");
+    await expect(order("22222222-2222-4222-8222-000000000004", "d", "k")).rejects.toMatchObject({
+      code: "23505",
+      constraint: "orders_idempotency_key_key",
+    });
+    expect(constraint.rows).toHaveLength(1);
+  });
+
   it("records every applied file in schema_migrations, in filename order", async () => {
     const applied = await runMigrations(client, migrationsDir);
 
