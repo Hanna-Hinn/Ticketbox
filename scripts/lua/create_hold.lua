@@ -6,10 +6,11 @@
 -- and the HINCRBY's write sits a round trip, and in that gap Redis answers
 -- every other caller's HGET with the same number. 200 concurrent callers
 -- each read 10, each passed the check, each decremented: remaining -390,
--- 195 holds sold from 10 tickets (docs/NOTES.md § TB-021). Redis runs a
+-- 200 holds written, 195 of them oversold (docs/NOTES.md § TB-021). Redis runs a
 -- script to completion before it reads the next command from any client,
 -- so in here the read, the comparison and the decrement are one step: the
--- sixth caller reads 0, not 10.
+-- sixth caller reads 0, not 10. Seven commands, no loop: the blocking is
+-- the guarantee, and it is over in well under a millisecond.
 --
 -- KEYS[1]  tier hash        ticketbox:v1:tier:<tierId>        { remaining }
 -- KEYS[2]  hold hash        ticketbox:v1:hold:<token>         { tierId, qty, createdAt, expiresAt }
@@ -25,8 +26,16 @@
 -- -2 when the tier has no counter at all (never seeded, or lost — reconcile,
 -- TB-027). On -1 and -2 nothing is written.
 --
--- Not idempotent: the same token twice decrements twice. Tokens are
--- generated, never retried; an idempotent POST /holds is TB-030's lesson.
+-- Idempotent per token, because the transport retries: ioredis re-sends a
+-- command that was in flight when the socket dropped, so a script whose
+-- reply was lost runs again with the same arguments. The hold key is this
+-- token's receipt — if it exists, the first run already paid, and the
+-- replay answers with the current count instead of paying twice. (A client
+-- retry with a NEW token is a different problem: idempotent POST /holds is
+-- TB-030's lesson.)
+if redis.call('EXISTS', KEYS[2]) == 1 then
+  return tonumber(redis.call('HGET', KEYS[1], 'remaining'))
+end
 local remaining = redis.call('HGET', KEYS[1], 'remaining')
 if not remaining then
   return -2

@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { Redis } from "ioredis";
 import pino from "pino";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import type { Hold } from "../../../src/domain/entities/Hold.js";
 import { holdToken } from "../../../src/domain/value-objects/HoldToken.js";
 import { tierId } from "../../../src/domain/value-objects/Ids.js";
 import { RedisHoldStore } from "../../../src/infrastructure/redis/RedisHoldStore.js";
@@ -15,9 +16,14 @@ const OTHER = tierId("11111111-1111-4111-8111-bbbbbbbbbbbb");
 const CREATED = "2026-01-01T10:00:00.000Z";
 const TTL_MS = 120_000;
 
-function held(qty: number, token = "tok-1", ttlMs = TTL_MS): ReturnType<typeof aHold>["build"] {
-  return () =>
-    aHold().forTier(TIER).withToken(token).withQty(qty).createdAt(CREATED).withTtl(ttlMs).build();
+function held(qty: number, token = "tok-1", ttlMs = TTL_MS): Hold {
+  return aHold()
+    .forTier(TIER)
+    .withToken(token)
+    .withQty(qty)
+    .createdAt(CREATED)
+    .withTtl(ttlMs)
+    .build();
 }
 
 let redis: Redis;
@@ -42,7 +48,7 @@ beforeEach(async () => {
 describe("RedisHoldStore.reserve (create_hold.lua)", () => {
   it("decrements the counter and writes the hold and its index entry", async () => {
     await redis.hset(keys.tier(TIER), "remaining", 10);
-    const hold = held(2)();
+    const hold = held(2);
 
     const result = await store.reserve(hold);
 
@@ -62,7 +68,7 @@ describe("RedisHoldStore.reserve (create_hold.lua)", () => {
   it("gives the hold key the hold's TTL, within tolerance", async () => {
     await redis.hset(keys.tier(TIER), "remaining", 10);
 
-    await store.reserve(held(2)());
+    await store.reserve(held(2));
 
     const pttl = await redis.pttl(keys.hold(holdToken("tok-1")));
     expect(pttl).toBeGreaterThan(TTL_MS - 100);
@@ -72,7 +78,7 @@ describe("RedisHoldStore.reserve (create_hold.lua)", () => {
   it("refuses when insufficient and writes nothing at all", async () => {
     await redis.hset(keys.tier(TIER), "remaining", 1);
 
-    const result = await store.reserve(held(2)());
+    const result = await store.reserve(held(2));
 
     expect(result).toEqual({ ok: false, reason: "insufficient" });
     expect(await redis.hget(keys.tier(TIER), "remaining")).toBe("1");
@@ -83,8 +89,8 @@ describe("RedisHoldStore.reserve (create_hold.lua)", () => {
   it("allows exactly the remainder, leaving zero, then refuses", async () => {
     await redis.hset(keys.tier(TIER), "remaining", 2);
 
-    const last = await store.reserve(held(2)());
-    const oneMore = await store.reserve(held(1, "tok-2")());
+    const last = await store.reserve(held(2));
+    const oneMore = await store.reserve(held(1, "tok-2"));
 
     expect(last).toEqual({ ok: true, remaining: 0 });
     expect(oneMore).toEqual({ ok: false, reason: "insufficient" });
@@ -92,7 +98,7 @@ describe("RedisHoldStore.reserve (create_hold.lua)", () => {
   });
 
   it("refuses a tier with no counter, warns naming it, and writes nothing", async () => {
-    const result = await store.reserve(held(1)());
+    const result = await store.reserve(held(1));
 
     expect(result).toEqual({ ok: false, reason: "insufficient" });
     expect(warnings).toHaveLength(1);
@@ -100,22 +106,65 @@ describe("RedisHoldStore.reserve (create_hold.lua)", () => {
     expect(warnings[0]).toContain(TIER);
     expect(await redis.exists(keys.hold(holdToken("tok-1")))).toBe(0);
     expect(await redis.exists(keys.tier(TIER))).toBe(0);
+    expect(await redis.zcard(keys.tierHolds(TIER))).toBe(0);
+  });
+
+  it("pays once for a token sent twice (the transport's resend after a reconnect)", async () => {
+    // ioredis re-sends a command that was in flight when the socket dropped;
+    // a script whose reply was lost runs again with the same arguments. The
+    // hold key is the receipt.
+    await redis.hset(keys.tier(TIER), "remaining", 10);
+    const hold = held(2);
+
+    const first = await store.reserve(hold);
+    const replay = await store.reserve(hold);
+
+    expect(first).toEqual({ ok: true, remaining: 8 });
+    expect(replay).toEqual({ ok: true, remaining: 8 });
+    expect(await redis.hget(keys.tier(TIER), "remaining")).toBe("8");
+    expect(await redis.zcard(keys.tierHolds(TIER))).toBe(1);
+  });
+
+  it("fails rather than guessing when the counter is not a number", async () => {
+    await redis.hset(keys.tier(TIER), "remaining", "ten");
+
+    await expect(store.reserve(held(1))).rejects.toThrow();
+
+    expect(await redis.exists(keys.hold(holdToken("tok-1")))).toBe(0);
   });
 
   it("is cached on the server after the first call (EVALSHA from then on)", async () => {
+    // SCRIPT FLUSH is server-wide: every other client's next call goes back
+    // to EVAL, which is the NOSCRIPT path ioredis handles. Without it this
+    // test would pass on a warm server whether or not the script ever ran.
+    await redis.script("FLUSH");
     await redis.hset(keys.tier(TIER), "remaining", 10);
     const sha = createHash("sha1").update(CREATE_HOLD_LUA).digest("hex");
 
-    await store.reserve(held(1)());
+    await store.reserve(held(1));
 
     expect(await redis.script("EXISTS", sha)).toEqual([1]);
+  });
+
+  it("gives up on a connected client that does not answer, within the deadline", async () => {
+    // The one real wait in this file: a client whose script call never
+    // settles must be abandoned by the deadline, not by the OS.
+    const silent = await connectToTestRedis();
+    const stuck = new RedisHoldStore(silent, pino({ level: "silent" }));
+    silent.createHold = () => new Promise<number>(() => undefined);
+    const started = Date.now();
+
+    await expect(stuck.reserve(held(1))).rejects.toThrow(/reserve exceeded 1000ms/);
+
+    expect(Date.now() - started).toBeLessThan(1_500);
+    silent.disconnect();
   });
 
   it("fails fast on a client that is not connected instead of queueing the write", async () => {
     const disconnected = new Redis(testRedisUrl(), { lazyConnect: true });
     const offline = new RedisHoldStore(disconnected, pino({ level: "silent" }));
 
-    await expect(offline.reserve(held(1)())).rejects.toThrow(/redis is wait; cannot reserve/);
+    await expect(offline.reserve(held(1))).rejects.toThrow(/redis is wait; cannot reserve/);
 
     disconnected.disconnect();
   });
@@ -124,7 +173,7 @@ describe("RedisHoldStore.reserve (create_hold.lua)", () => {
 describe("RedisHoldStore.find", () => {
   it("rebuilds the hold it wrote, with the same instants", async () => {
     await redis.hset(keys.tier(TIER), "remaining", 10);
-    const written = held(3)();
+    const written = held(3);
     await store.reserve(written);
 
     const found = await store.find(written.token);
@@ -143,7 +192,7 @@ describe("RedisHoldStore.find", () => {
   it("forgets the hold when its TTL elapses, and does not give its tickets back", async () => {
     // The one test allowed a real wait: a 50 ms TTL, polled, no fixed sleep.
     await redis.hset(keys.tier(TIER), "remaining", 10);
-    await store.reserve(held(2, "tok-short", 50)());
+    await store.reserve(held(2, "tok-short", 50));
     const key = keys.hold(holdToken("tok-short"));
 
     const deadline = Date.now() + 2_000;
@@ -172,6 +221,17 @@ describe("RedisHoldStore.availability", () => {
     const live = await store.availability([TIER, OTHER]);
 
     expect(live).toEqual(new Map([[TIER, 7]]));
+  });
+
+  it("skips a counter that is not a number, warns, and keeps the rest", async () => {
+    await redis.hset(keys.tier(TIER), "remaining", "ten");
+    await redis.hset(keys.tier(OTHER), "remaining", 3);
+
+    const live = await store.availability([TIER, OTHER]);
+
+    expect(live).toEqual(new Map([[OTHER, 3]]));
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0]).toContain("not a number");
   });
 
   it("answers an empty map, not an error, while the client is not connected", async () => {

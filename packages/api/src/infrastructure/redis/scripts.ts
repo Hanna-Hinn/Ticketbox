@@ -9,7 +9,10 @@ export const CREATE_HOLD_LUA = readFileSync(new URL("create_hold.lua", LUA_DIR),
 
 // ioredis adds a defined command to the client at runtime only. Its
 // RedisCommander interface is left open for exactly this augmentation; the
-// signature here is the script's KEYS then ARGV, in order.
+// signature here is the script's KEYS then ARGV, in order. The augmentation
+// is global to the module: every Redis value in this package types
+// createHold, but only a client that went through defineHoldScripts has it
+// at runtime — call it from RedisHoldStore and nowhere else.
 declare module "ioredis" {
   interface RedisCommander<Context extends ClientContext = { type: "default" }> {
     createHold(

@@ -45,11 +45,13 @@ describe("200 concurrent reserves of 2 against a tier with 10 remaining", () => 
       const successes = results.filter((result) => result.ok);
       expect(successes).toHaveLength(5);
       // Each winner saw a distinct, non-negative count: 8, 6, 4, 2, 0.
-      expect(successes.map((result) => (result.ok ? result.remaining : NaN)).sort()).toEqual([
-        0, 2, 4, 6, 8,
-      ]);
+      expect(
+        successes.map((result) => (result.ok ? result.remaining : NaN)).sort((a, b) => a - b),
+      ).toEqual([0, 2, 4, 6, 8]);
       expect(await redis.hget(keys.tier(TIER), "remaining")).toBe("0");
       expect(await redis.zcard(keys.tierHolds(TIER))).toBe(5);
+      // A glob through the registry: the only way it offers to build a
+      // pattern; a keys.holdPattern() is TB-040's (KEYS vs SCAN).
       expect(await redis.keys(keys.hold(holdToken("*")))).toHaveLength(5);
     },
   );

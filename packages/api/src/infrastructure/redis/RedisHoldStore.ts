@@ -14,6 +14,13 @@ import { CACHE_COMMAND_DEADLINE_MS, within } from "./within.js";
 const INSUFFICIENT = -1;
 const NO_COUNTER = -2;
 
+// A socket that is "ready" and not answering (half-open TCP, a BUSY server)
+// would hold a POST /holds for as long as the OS takes to notice; the write
+// path gets a deadline too, wider than the cache's because a script that
+// ran but whose reply was lost is not "did not happen" — it is a hold with
+// nobody holding its token, bounded by the TTL (plan §6).
+const HOLD_COMMAND_DEADLINE_MS = 1_000;
+
 // The live truth about holds: a counter per tier, a hash per hold with the
 // hold's own TTL, a sorted set per tier for the sweeper. Writes fail closed
 // (a store that cannot be reached is an error, never "insufficient");
@@ -34,16 +41,20 @@ export class RedisHoldStore implements HoldStore {
     // the expiry the client counts down to, the score the sweeper sorts by
     // and the hash's own field are one number. Only the key's TTL is
     // relative, and so on Redis's clock.
-    const left = await this.redis.createHold(
-      keys.tier(hold.tierId),
-      keys.hold(hold.token),
-      keys.tierHolds(hold.tierId),
-      hold.qty.value,
-      hold.token,
-      hold.tierId,
-      hold.createdAt.getTime(),
-      hold.expiresAt.getTime(),
-      hold.expiresAt.getTime() - hold.createdAt.getTime(),
+    const left = await within(
+      this.redis.createHold(
+        keys.tier(hold.tierId),
+        keys.hold(hold.token),
+        keys.tierHolds(hold.tierId),
+        hold.qty.value,
+        hold.token,
+        hold.tierId,
+        hold.createdAt.getTime(),
+        hold.expiresAt.getTime(),
+        hold.expiresAt.getTime() - hold.createdAt.getTime(),
+      ),
+      HOLD_COMMAND_DEADLINE_MS,
+      "reserve",
     );
     if (left === NO_COUNTER) {
       // Reads fall back to the computed count for this tier (ADR 0002); the
@@ -74,6 +85,7 @@ export class RedisHoldStore implements HoldStore {
       counts = await within(
         Promise.all(tierIds.map((id) => this.redis.hget(keys.tier(id), "remaining"))),
         CACHE_COMMAND_DEADLINE_MS,
+        "live counts",
       );
     } catch (err: unknown) {
       this.log.warn({ err: describeRedisError(err) }, "live counts unavailable; computed counts");
@@ -81,14 +93,29 @@ export class RedisHoldStore implements HoldStore {
     }
     tierIds.forEach((id, i) => {
       const count = counts[i];
-      if (count !== null && count !== undefined) result.set(id, Number(count));
+      if (count === null || count === undefined) return;
+      const remaining = Number(count);
+      // A counter that is not a number is our own write gone wrong; on the
+      // read path that is "no live count" (the computed fallback, ADR 0002)
+      // plus a warn, the same fail-open shape as a cache entry that does
+      // not parse. reserve against it fails instead: the script's tonumber
+      // yields nil and the comparison raises.
+      if (!Number.isFinite(remaining)) {
+        this.log.warn({ tierId: id, key: keys.tier(id), count }, "live counter is not a number");
+        return;
+      }
+      result.set(id, remaining);
     });
     return result;
   }
 
   async find(token: HoldToken): Promise<Hold | null> {
     this.requireReady("find");
-    const fields = await this.redis.hgetall(keys.hold(token));
+    const fields = await within(
+      this.redis.hgetall(keys.hold(token)),
+      HOLD_COMMAND_DEADLINE_MS,
+      "find",
+    );
     // HGETALL on a key that does not exist (expired, evicted, never written)
     // is an empty hash, not an error.
     if (Object.keys(fields).length === 0) return null;
@@ -105,6 +132,7 @@ export class RedisHoldStore implements HoldStore {
 
   // A write against a client that is not connected would sit in ioredis's
   // offline queue until the reconnect; the request should fail now instead.
+  // (A client that is connected and silent is the deadline's job, above.)
   private requireReady(operation: string): void {
     if (this.redis.status !== "ready") {
       throw new Error(`redis is ${this.redis.status}; cannot ${operation}`);
