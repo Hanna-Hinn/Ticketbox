@@ -1,6 +1,6 @@
 # TB-026 — Expired-hold sweeper
 
-**Status:** Approved
+**Status:** Implemented — see [`docs/tasks/TB-026-expired-hold-sweeper.md`](../tasks/TB-026-expired-hold-sweeper.md)
 **Date:** 2026-10-17
 **Task:** TB-026 (`docs/02-product-delivery-plan.md`)
 **Branch:** `feat/TB-026-expired-hold-sweeper` (stacked on `feat/TB-025-hold-ui-countdown`)
@@ -188,7 +188,17 @@ None blocking. Decision 1 is the one to argue: a reviewer may prefer the grace-T
 
 ## 9. Documentation this task will produce
 
-- ☐ ADR — `docs/adr/0005-the-index-carries-the-quantity.md` — decision 1, with the three alternatives
-- ☐ Task doc — `docs/tasks/TB-026-expired-hold-sweeper.md`
+- ☑ ADR — `docs/adr/0005-the-index-carries-the-quantity.md` — decision 1, with the three alternatives
+- ☑ Task doc — `docs/tasks/TB-026-expired-hold-sweeper.md`
 - ☐ Benchmark entry — nothing measurable changed
 - ☐ NOTES entry — not a SPIKE task
+
+---
+
+## 10. Amendments after implementation
+
+- **§4 and §6:** `pool.ts` (connection and query timeouts) and the Postgres-down answer, added in review — the plan had answered the outage and missed the stall.
+- **Decision 6:** `unmarked` carries each error, not just the token; the worker's tick lives in `worker/sweepOnce.ts` so its logging is testable.
+- **Decision 1:** "cannot decode" includes a member that does not re-encode to itself.
+- **§4:** `README.md`'s `dev:worker` line now says what the worker is.
+- **§5:** the two-sweeper concurrency test uses the in-memory mirror; the row side under a stall is `pool.test.ts`; nine sabotages, all red.
