@@ -6,10 +6,14 @@ import { eventId, type EventId } from "../../../../src/domain/value-objects/Ids.
 import {
   CACHE_COMMAND_DEADLINE_MS,
   CachedEventRepository,
+  NEGATIVE_SENTINEL,
+  REFRESH_MUTEX_MS,
+  REFRESH_POLL_MS,
 } from "../../../../src/infrastructure/redis/CachedEventRepository.js";
 import { keys } from "../../../../src/infrastructure/redis/keys.js";
 import { aTier, anEvent, DEFAULT_EVENT_ID } from "../../../fakes/builders.js";
 import { InMemoryCache } from "../../../fakes/InMemoryCache.js";
+import { InMemoryCacheStats } from "../../../fakes/InMemoryCacheStats.js";
 import { InMemoryEventRepository } from "../../../fakes/InMemoryEventRepository.js";
 
 // An inner repository that remembers how often it was asked: the whole point
@@ -33,10 +37,12 @@ function world(events: readonly Event[] = [jazz()]): {
   repo: CachedEventRepository;
   inner: CountingEventRepository;
   cache: InMemoryCache;
+  stats: InMemoryCacheStats;
 } {
   const inner = new CountingEventRepository(new InMemoryEventRepository(events));
   const cache = new InMemoryCache();
-  return { repo: new CachedEventRepository(inner, cache, silent), inner, cache };
+  const stats = new InMemoryCacheStats();
+  return { repo: new CachedEventRepository(inner, cache, stats, silent), inner, cache, stats };
 }
 
 function jazz(): Event {
@@ -153,14 +159,141 @@ describe("CachedEventRepository", () => {
     expect(cache.entries.get(keys.eventCache(DEFAULT_EVENT_ID))?.value).not.toBe(raw);
   });
 
-  it("does not cache an unknown event", async () => {
+  it("caches an unknown event as a short-lived negative entry", async () => {
     const { repo, inner, cache } = world();
 
     expect(await repo.findById(UNKNOWN)).toBeNull();
     expect(await repo.findById(UNKNOWN)).toBeNull();
 
+    expect(inner.calls).toBe(1);
+    // The literal, not the constant: 30 s is the plan's number, and a test
+    // that compares the constant to itself cannot notice it changing.
+    expect(cache.entries.get(keys.eventCache(UNKNOWN))).toEqual({
+      value: NEGATIVE_SENTINEL,
+      ttlSeconds: 30,
+    });
+  });
+
+  it("counts a miss, a hit, and a negative hit", async () => {
+    const { repo, stats } = world();
+
+    await repo.findById(DEFAULT_EVENT_ID);
+    await repo.findById(DEFAULT_EVENT_ID);
+    await repo.findById(DEFAULT_EVENT_ID);
+    await repo.findById(UNKNOWN);
+    await repo.findById(UNKNOWN);
+
+    // Asymmetric on purpose: 2 and 2 would not notice the counters swapped.
+    expect(stats).toMatchObject({ hits: 3, misses: 2 });
+  });
+
+  it("takes the refresh mutex on a miss and lets it expire", async () => {
+    const { repo, cache } = world();
+
+    await repo.findById(DEFAULT_EVENT_ID);
+
+    expect(cache.entries.get(keys.eventRefresh(DEFAULT_EVENT_ID))).toEqual({
+      value: "1",
+      ttlMs: REFRESH_MUTEX_MS,
+    });
+  });
+
+  it("as a loser, waits for the winner's answer instead of reading through", async () => {
+    vi.useFakeTimers();
+    const { repo, inner, cache } = world();
+    cache.entries.set(keys.eventRefresh(DEFAULT_EVENT_ID), { value: "1", ttlMs: REFRESH_MUTEX_MS });
+
+    const pending = repo.findById(DEFAULT_EVENT_ID);
+    await vi.advanceTimersByTimeAsync(REFRESH_POLL_MS * 3);
+    // The winner lands its answer while the loser is polling.
+    cache.entries.set(keys.eventCache(DEFAULT_EVENT_ID), {
+      value: JSON.stringify({ ...JSON.parse(payload({})), name: "From the winner" }),
+      ttlSeconds: 300,
+    });
+    await vi.advanceTimersByTimeAsync(REFRESH_POLL_MS * 2);
+
+    expect((await pending)?.name).toBe("From the winner");
+    expect(inner.calls).toBe(0);
+  });
+
+  it("as a loser whose winner never answers, reads through after the mutex lifetime and caches nothing", async () => {
+    vi.useFakeTimers();
+    const { repo, inner, cache } = world();
+    cache.entries.set(keys.eventRefresh(DEFAULT_EVENT_ID), { value: "1", ttlMs: REFRESH_MUTEX_MS });
+
+    const pending = repo.findById(DEFAULT_EVENT_ID);
+    await vi.advanceTimersByTimeAsync(REFRESH_MUTEX_MS + REFRESH_POLL_MS);
+
+    expect((await pending)?.name).toBe("Rooftop Jazz Night");
+    expect(inner.calls).toBe(1);
+    expect(cache.entries.has(keys.eventCache(DEFAULT_EVENT_ID))).toBe(false);
+  });
+
+  it("as a loser whose cache breaks mid-wait, reads through promptly and caches nothing", async () => {
+    vi.useFakeTimers();
+    const { repo, inner, cache } = world();
+    cache.entries.set(keys.eventRefresh(DEFAULT_EVENT_ID), { value: "1", ttlMs: REFRESH_MUTEX_MS });
+
+    const pending = repo.findById(DEFAULT_EVENT_ID);
+    await vi.advanceTimersByTimeAsync(REFRESH_POLL_MS * 3);
+    cache.failing = true;
+    await vi.advanceTimersByTimeAsync(REFRESH_POLL_MS);
+
+    expect((await pending)?.name).toBe("Rooftop Jazz Night");
+    expect(inner.calls).toBe(1);
+    expect(cache.entries.has(keys.eventCache(DEFAULT_EVENT_ID))).toBe(false);
+  });
+
+  it("when the winner's write fails, every loser reads through once the mutex lifetime is up", async () => {
+    vi.useFakeTimers();
+    const { repo, inner, cache } = world();
+    const originalSet = cache.set.bind(cache);
+    // The mutex SET succeeds; only the event write fails.
+    cache.set = async (key, value, token, amount, nx) => {
+      if (key === keys.eventCache(DEFAULT_EVENT_ID)) throw new Error("Connection is closed.");
+      return originalSet(key, value, token, amount, nx);
+    };
+
+    const reads = [1, 2, 3].map(() => repo.findById(DEFAULT_EVENT_ID));
+    await vi.advanceTimersByTimeAsync(REFRESH_MUTEX_MS - REFRESH_POLL_MS);
+    expect(inner.calls).toBe(1);
+    await vi.advanceTimersByTimeAsync(REFRESH_POLL_MS * 2);
+
+    const events = await Promise.all(reads);
+    expect(events.every((event) => event?.name === "Rooftop Jazz Night")).toBe(true);
+    expect(inner.calls).toBe(3);
+  });
+
+  it("a read right after invalidation waits out the refresh mutex, then reads through uncached", async () => {
+    // Decision 1 of the plan: the mutex is not released, it expires. The
+    // first read after an invalidation within its lifetime pays for that;
+    // TB-031's compare-and-delete turns this test red.
+    vi.useFakeTimers();
+    const { repo, inner, cache } = world();
+    await repo.findById(DEFAULT_EVENT_ID);
+    await repo.invalidate(DEFAULT_EVENT_ID);
+
+    let settled = false;
+    const pending = repo.findById(DEFAULT_EVENT_ID).then((event) => {
+      settled = true;
+      return event;
+    });
+    await vi.advanceTimersByTimeAsync(REFRESH_MUTEX_MS - REFRESH_POLL_MS);
+    expect(settled).toBe(false);
+    await vi.advanceTimersByTimeAsync(REFRESH_POLL_MS * 2);
+
+    expect((await pending)?.name).toBe("Rooftop Jazz Night");
     expect(inner.calls).toBe(2);
-    expect(cache.entries.size).toBe(0);
+    expect(cache.entries.has(keys.eventCache(DEFAULT_EVENT_ID))).toBe(false);
+  });
+
+  it("counts an unreachable cache as a miss", async () => {
+    const { repo, stats, cache } = world();
+    cache.failing = true;
+
+    await repo.findById(DEFAULT_EVENT_ID);
+
+    expect(stats).toMatchObject({ hits: 0, misses: 1 });
   });
 
   it("skips the cache entirely while the client is not ready", async () => {
@@ -236,14 +369,14 @@ describe("CachedEventRepository", () => {
     await outcome;
   });
 
-  it("returns null for an unknown event even when a corrupt key is present, and does not rewrite it", async () => {
+  it("heals a corrupt key for an unknown event into the negative entry", async () => {
     const { repo, cache } = world();
     cache.entries.set(keys.eventCache(UNKNOWN), { value: "{", ttlSeconds: 300 });
 
     const event = await repo.findById(UNKNOWN);
 
     expect(event).toBeNull();
-    expect(cache.entries.get(keys.eventCache(UNKNOWN))?.value).toBe("{");
+    expect(cache.entries.get(keys.eventCache(UNKNOWN))?.value).toBe(NEGATIVE_SENTINEL);
   });
 
   it("passes listUpcoming through untouched", async () => {

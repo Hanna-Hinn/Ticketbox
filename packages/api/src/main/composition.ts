@@ -1,14 +1,17 @@
 import type { FastifyInstance } from "fastify";
 import pino from "pino";
+import { GetCacheStatsUseCase } from "../application/use-cases/GetCacheStats.js";
 import { GetEventAvailabilityUseCase } from "../application/use-cases/GetEventAvailability.js";
 import { ListUpcomingEventsUseCase } from "../application/use-cases/ListUpcomingEvents.js";
 import { PgEventRepository } from "../infrastructure/postgres/PgEventRepository.js";
 import { createPool } from "../infrastructure/postgres/pool.js";
 import { CachedEventRepository } from "../infrastructure/redis/CachedEventRepository.js";
+import { RedisCacheStats } from "../infrastructure/redis/RedisCacheStats.js";
 import { closeRedisClient, createRedisClient } from "../infrastructure/redis/client.js";
 import { SystemClock } from "../infrastructure/system/SystemClock.js";
 import { UnconfiguredHoldStore } from "../infrastructure/system/UnconfiguredHoldStore.js";
 import { EventController } from "../presentation/http/controllers/EventController.js";
+import { StatsController } from "../presentation/http/controllers/StatsController.js";
 import { buildServer } from "../presentation/http/server.js";
 import type { Config } from "./config.js";
 
@@ -33,9 +36,11 @@ export function compose(config: Config): System {
   // Ports → adapters
   // EventRepository: Postgres computes, Redis remembers the answer for 300 s
   // (TB-018). Only this line knows there is a cache.
+  const cacheStats = new RedisCacheStats(redis, log.child({ component: "cache-stats" }));
   const events = new CachedEventRepository(
     new PgEventRepository(pool),
     redis,
+    cacheStats, // CacheStatsRecorder
     log.child({ component: "event-cache" }),
   );
   const holds = new UnconfiguredHoldStore(); // HoldStore, until TB-022
@@ -44,9 +49,11 @@ export function compose(config: Config): System {
   // Use cases
   const listUpcoming = new ListUpcomingEventsUseCase(events, clock);
   const getAvailability = new GetEventAvailabilityUseCase(events, holds);
+  const getCacheStats = new GetCacheStatsUseCase(cacheStats); // CacheStatsReader
 
   // HTTP
   const controller = new EventController(listUpcoming, getAvailability);
+  const stats = new StatsController(getCacheStats);
   const checks = {
     postgres: async (): Promise<void> => {
       await pool.query("SELECT 1");
@@ -55,7 +62,7 @@ export function compose(config: Config): System {
       await redis.ping();
     },
   };
-  const app = buildServer({ logger: log, events: controller, checks });
+  const app = buildServer({ logger: log, events: controller, stats, checks });
 
   // Memoised: pool.end() throws if called twice, and a supervisor's
   // SIGINT-then-SIGTERM is two calls.

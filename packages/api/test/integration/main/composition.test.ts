@@ -89,6 +89,19 @@ describe("compose", () => {
     expect(second.json<{ name: string }>().name).toBe("From the cache");
   });
 
+  it("exposes the cache counters at /_stats", async () => {
+    const jazz = eventId("11111111-1111-4111-8111-111111111111");
+    await system.app.inject({ url: `/events/${jazz}` });
+    await system.app.inject({ url: `/events/${jazz}` });
+
+    // The INCRs and the MGET behind /_stats share the system's connection,
+    // in FIFO order; nothing else makes them land first.
+    const response = await system.app.inject({ url: "/_stats" });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toEqual({ cache: { hits: 1, misses: 1, hitRatio: 0.5 } });
+  });
+
   it("reports Redis down within the health bound and still closes promptly", async () => {
     const degraded = compose({
       DATABASE_URL: testDatabaseUrl(),
@@ -98,6 +111,7 @@ describe("compose", () => {
     });
 
     const response = await degraded.app.inject({ url: "/health" });
+    const stats = await degraded.app.inject({ url: "/_stats" });
     const started = Date.now();
     await degraded.close();
 
@@ -106,6 +120,8 @@ describe("compose", () => {
       status: "degraded",
       checks: { postgres: "ok", redis: "down" },
     });
+    expect(stats.statusCode).toBe(200);
+    expect(stats.json()).toEqual({ cache: { hits: 0, misses: 0, hitRatio: 0 } });
     expect(Date.now() - started).toBeLessThan(1_000);
   });
 

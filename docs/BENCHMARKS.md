@@ -169,16 +169,106 @@ A 3-second warm-up run preceded each measured run. Run from `packages/api` with 
 
 Same load test, same endpoint, `CachedEventRepository` in front of the **indexed** repository — compare against the indexed row above, not the unindexed one.
 
-|                         | Indexed (no cache) | Cached, cold | Cached, warm |
-| ----------------------- | ------------------ | ------------ | ------------ |
-| req/s (avg)             |                    |              |              |
-| p50 latency             |                    |              |              |
-| p99 latency             |                    |              |              |
-| Postgres queries issued |                    |              |              |
+**Method.** Same machine and API settings as §1 (the TB-013 machine line). The dev database was re-filled with §1's fixture (200 000 holds) from the same SQL, the API restarted on the TB-019 code, a 3-second warm-up run made, then the cache flushed (`FLUSHALL` on the dev Redis). "Cached, cold" is `autocannon -c 50 -d 10` started against an empty cache — the first wave of 50 concurrent requests is a stampede on one cold key. "Cached, warm" is the same run again with the key present and the counters reset. "Postgres queries issued" is read from Postgres itself: `idx_scan` on `holds` in `pg_stat_user_tables` before and after each run, divided by 3 (the availability query runs its `holds` sub-query once per tier, `loops=3` in §1's plan). Hit ratio from `GET /_stats`. The database was reset (`migrate` + `seed`) afterwards.
 
-**Hit ratio at steady state** (`GET /_stats`): _fill in_
+|                         | Indexed (no cache), TB-013's row | Indexed (no cache), this build, Redis stopped                                            | Cached, cold                                                                                                                                                      | Cached, warm |
+| ----------------------- | -------------------------------- | ---------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------ |
+| req/s (avg)             | 310.6                            | 281.2                                                                                    | 11 303                                                                                                                                                            | 10 742       |
+| p50 latency             | 159 ms                           | 176 ms                                                                                   | 3 ms                                                                                                                                                              | 4 ms         |
+| p99 latency             | 199 ms                           | 228 ms                                                                                   | 9 ms                                                                                                                                                              | 9 ms         |
+| mean latency            | 159.6 ms                         | 176.5 ms                                                                                 | 3.92 ms                                                                                                                                                           | 4.15 ms      |
+| Postgres queries issued | not counted in TB-013            | **2 857** measured (8 571 `idx_scan` ÷ 3) for ~2 812 completed requests: one per request | **2** in the 10 s run (6 `idx_scan` ÷ 3; one attributed to pg_stat lag from the preceding `curl`); **1** per cold wave in 5 of 6 repeated 1 s runs — see the note | **0**        |
 
-**Notes:** _how much of the win is the cache vs. how much was already spent by the index?_
+**Hit ratio at steady state** (`GET /_stats`): cold run `{"hits":113036,"misses":50,"hitRatio":0.99956}`; warm run `{"hits":107469,"misses":0,"hitRatio":1}`.
+
+Single request, cold then warm (`curl -w %{time_total}`): 25.8 ms, then 1.6 ms.
+
+The two autocannon summaries, verbatim:
+
+Cached, cold:
+
+```
+┌─────────┬──────┬──────┬───────┬──────┬─────────┬─────────┬───────┐
+│ Stat    │ 2.5% │ 50%  │ 97.5% │ 99%  │ Avg     │ Stdev   │ Max   │
+├─────────┼──────┼──────┼───────┼──────┼─────────┼─────────┼───────┤
+│ Latency │ 2 ms │ 3 ms │ 8 ms  │ 9 ms │ 3.92 ms │ 1.68 ms │ 54 ms │
+└─────────┴──────┴──────┴───────┴──────┴─────────┴─────────┴───────┘
+┌───────────┬────────┬────────┬─────────┬─────────┬──────────┬──────────┬────────┐
+│ Stat      │ 1%     │ 2.5%   │ 50%     │ 97.5%   │ Avg      │ Stdev    │ Min    │
+├───────────┼────────┼────────┼─────────┼─────────┼──────────┼──────────┼────────┤
+│ Req/Sec   │ 9,447  │ 9,447  │ 10,719  │ 14,087  │ 11,303.2 │ 1,512.26 │ 9,443  │
+├───────────┼────────┼────────┼─────────┼─────────┼──────────┼──────────┼────────┤
+│ Bytes/Sec │ 6.8 MB │ 6.8 MB │ 7.72 MB │ 10.1 MB │ 8.14 MB  │ 1.09 MB  │ 6.8 MB │
+└───────────┴────────┴────────┴─────────┴─────────┴──────────┴──────────┴────────┘
+113k requests in 10.04s, 81.4 MB read
+```
+
+Cached, warm:
+
+```
+┌─────────┬──────┬──────┬───────┬──────┬─────────┬─────────┬───────┐
+│ Stat    │ 2.5% │ 50%  │ 97.5% │ 99%  │ Avg     │ Stdev   │ Max   │
+├─────────┼──────┼──────┼───────┼──────┼─────────┼─────────┼───────┤
+│ Latency │ 2 ms │ 4 ms │ 7 ms  │ 9 ms │ 4.15 ms │ 1.67 ms │ 51 ms │
+└─────────┴──────┴──────┴───────┴──────┴─────────┴─────────┴───────┘
+┌───────────┬─────────┬─────────┬─────────┬─────────┬──────────┬──────────┬─────────┐
+│ Stat      │ 1%      │ 2.5%    │ 50%     │ 97.5%   │ Avg      │ Stdev    │ Min     │
+├───────────┼─────────┼─────────┼─────────┼─────────┼──────────┼──────────┼─────────┤
+│ Req/Sec   │ 8,671   │ 8,671   │ 10,791  │ 11,863  │ 10,741.6 │ 1,080.58 │ 8,670   │
+├───────────┼─────────┼─────────┼─────────┼─────────┼──────────┼──────────┼─────────┤
+│ Bytes/Sec │ 6.25 MB │ 6.25 MB │ 7.77 MB │ 8.54 MB │ 7.73 MB  │ 777 kB   │ 6.24 MB │
+└───────────┴─────────┴─────────┴─────────┴─────────┴──────────┴──────────┴─────────┘
+107k requests in 10.04s, 77.3 MB read
+```
+
+**On the queries-issued counter.** The 10-second cold run showed `idx_scan` on `holds` moving by 6 — two availability queries, not one. Postgres flushes cumulative statistics with up to about a second of lag, so a read that happened in the preceding timed `curl` landed in the run's window. The measurement that isolates the stampede is six repeated 1-second cold waves, run as:
+
+```
+for i in 1 2 3 4 5 6; do
+  redis-cli flushall >/dev/null
+  b=$(psql $U -tAc "select idx_scan from pg_stat_user_tables where relname='holds'")
+  pnpm exec autocannon -c 50 -d 1 http://localhost:3000/events/11111111-1111-4111-8111-111111111111 >/dev/null 2>&1
+  a=$(psql $U -tAc "select idx_scan from pg_stat_user_tables where relname='holds'")
+  echo "run $i: holds idx_scan delta=$((a-b)) → reads=$(( (a-b)/3 )); misses recorded=$(redis-cli get ticketbox:v1:cache:stats:misses)"
+done
+```
+
+```
+run 1: holds idx_scan delta=0 → reads=0; misses recorded=50
+run 2: holds idx_scan delta=3 → reads=1; misses recorded=50
+run 3: holds idx_scan delta=3 → reads=1; misses recorded=50
+run 4: holds idx_scan delta=3 → reads=1; misses recorded=50
+run 5: holds idx_scan delta=3 → reads=1; misses recorded=50
+run 6: holds idx_scan delta=3 → reads=1; misses recorded=50
+(same loop with -c 1: reads=1 misses=1)
+```
+
+Five waves of exactly one read for fifty recorded misses, and one zero that is the same lag shifting the first wave's read into the second window. Single-flight holds in the real system; the counter is honest only to within that second, which is why the 10-second cell says 2 and this block says 1.
+
+**Notes:**
+
+- **The cache's win is much bigger than the index's, and it is a different kind of win.** The index cut the query from 51.5 ms to 23.1 ms and lifted the endpoint from 76 to 311 req/s by making Postgres faster. The cache lifts it from 311 to ~11 000 req/s by taking Postgres — and the 10-connection pool queue that §1 found behind the p50 — out of the path entirely. A warm request is a Redis `GET` and JSON parsing; at 50 connections the API process itself is now the bottleneck (Little's law: 50 ÷ 11 303 ≈ 4.4 ms ≈ the observed mean of 3.9 ms).
+- **The cold request costs what the indexed query costs.** 25.8 ms for the first request (one Postgres read at ~23 ms plus the write to Redis) against 1.6 ms for the second. Over a 10-second run that one miss is invisible: cold and warm rows are the same within noise, which is what single-flight is for — fifty concurrent misses became one read, not fifty.
+- **What the cache does not buy.** Correctness: the number it serves is the Postgres-computed fallback, and the live count (TB-022) overlays it. Freshness: up to 300 s of staleness after any change, which TB-019a demonstrates. And nothing here is a reason it was _needed_ — the indexed row was already 159 ms at 50 concurrent connections on a 4-vCPU box; the honest statement from ADR 0003 stands: the cache was built to learn the pattern and its failure modes, and these numbers say what it buys when you do.
+- **Two "indexed, no cache" columns.** TB-013's row is the original baseline. The second column is the same build as the cached rows, measured by stopping Redis under the running API (`redis-cli shutdown nosave`): the decorator skips a client that is not `ready` and reads through, so this is the composed API without its cache, same process, same hour — and the first number in this repo for the fail-open path under load. It is ~10 % slower than TB-013's row (the decorator's guard and the error handler's reconnect noise are in the path); the cached rows are compared against both. The queries-issued cell is measured here: 2 857 for ~2 812 completed requests, one per request as TB-010 built it.
+
+Indexed, this build, Redis stopped:
+
+```
+┌─────────┬────────┬────────┬────────┬────────┬───────────┬──────────┬────────┐
+│ Stat    │ 2.5%   │ 50%    │ 97.5%  │ 99%    │ Avg       │ Stdev    │ Max    │
+├─────────┼────────┼────────┼────────┼────────┼───────────┼──────────┼────────┤
+│ Latency │ 141 ms │ 176 ms │ 218 ms │ 228 ms │ 176.46 ms │ 20.81 ms │ 264 ms │
+└─────────┴────────┴────────┴────────┴────────┴───────────┴──────────┴────────┘
+┌───────────┬────────┬────────┬────────┬────────┬────────┬─────────┬────────┐
+│ Stat      │ 1%     │ 2.5%   │ 50%    │ 97.5%  │ Avg    │ Stdev   │ Min    │
+├───────────┼────────┼────────┼────────┼────────┼────────┼─────────┼────────┤
+│ Req/Sec   │ 256    │ 256    │ 283    │ 305    │ 281.2  │ 15.57   │ 256    │
+├───────────┼────────┼────────┼────────┼────────┼────────┼─────────┼────────┤
+│ Bytes/Sec │ 185 kB │ 185 kB │ 204 kB │ 220 kB │ 203 kB │ 11.2 kB │ 185 kB │
+└───────────┴────────┴────────┴────────┴────────┴────────┴─────────┴────────┘
+3k requests in 10.08s, 2.03 MB read
+```
 
 ---
 

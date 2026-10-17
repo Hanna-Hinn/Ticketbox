@@ -19,4 +19,11 @@ export const keys = {
   // string: the JSON of an Event, CACHE_TTL_SECONDS — the cache-aside entry (TB-018).
   // Its own namespace, so cache keys can be targeted without touching holds.
   eventCache: (id: EventId): string => `${KEY_PREFIX}cache:event:${id}`,
+  // string: the single-flight mutex for one event's refresh, PX-bounded (TB-019)
+  eventRefresh: (id: EventId): string => `${KEY_PREFIX}cache:event:${id}:refresh`,
+  // integers, no TTL: INCR'd on every cache lookup (TB-019)
+  cacheStats: {
+    hits: `${KEY_PREFIX}cache:stats:hits`,
+    misses: `${KEY_PREFIX}cache:stats:misses`,
+  },
 } as const;
