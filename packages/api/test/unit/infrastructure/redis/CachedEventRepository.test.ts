@@ -1,9 +1,12 @@
 import pino from "pino";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type { EventRepository } from "../../../../src/application/ports/EventRepository.js";
 import type { Event } from "../../../../src/domain/entities/Event.js";
 import { eventId, type EventId } from "../../../../src/domain/value-objects/Ids.js";
-import { CachedEventRepository } from "../../../../src/infrastructure/redis/CachedEventRepository.js";
+import {
+  CACHE_COMMAND_DEADLINE_MS,
+  CachedEventRepository,
+} from "../../../../src/infrastructure/redis/CachedEventRepository.js";
 import { keys } from "../../../../src/infrastructure/redis/keys.js";
 import { aTier, anEvent, DEFAULT_EVENT_ID } from "../../../fakes/builders.js";
 import { InMemoryCache } from "../../../fakes/InMemoryCache.js";
@@ -45,7 +48,31 @@ function jazz(): Event {
     .build();
 }
 
+function payload(tier: Record<string, unknown>, startsAt = "2026-12-05T19:30:00.000Z"): string {
+  return JSON.stringify({
+    id: DEFAULT_EVENT_ID,
+    name: "n",
+    venue: "v",
+    startsAt,
+    tiers: [
+      {
+        id: "t",
+        eventId: DEFAULT_EVENT_ID,
+        name: "G",
+        priceCents: 1,
+        total: 1,
+        remaining: 1,
+        ...tier,
+      },
+    ],
+  });
+}
+
 describe("CachedEventRepository", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
   it("reads through on a miss and serves the next read from the cache", async () => {
     const { repo, inner } = world();
 
@@ -108,6 +135,13 @@ describe("CachedEventRepository", () => {
         tiers: [{ id: "t", eventId: UNKNOWN, name: "G", priceCents: 1, total: 1, remaining: 1 }],
       }),
     ],
+    // Schema-shaped but constructor-hostile: these are what keep the "cannot
+    // throw here" comment in fromJson true.
+    ["an unsafe integer price", payload({ priceCents: 2 ** 53 })],
+    ["a fractional remaining", payload({ remaining: 1.5 })],
+    ["a negative fractional total", payload({ total: -0.5 })],
+    ["a calendar-impossible date", payload({}, "2026-02-30T00:00:00Z")],
+    ["a date with an offset", payload({}, "2026-12-05T19:30:00+01:00")],
   ])("treats a cached value that is %s as a miss and heals it", async (_what, raw) => {
     const { repo, inner, cache } = world();
     cache.entries.set(keys.eventCache(DEFAULT_EVENT_ID), { value: raw, ttlSeconds: 300 });
@@ -148,6 +182,68 @@ describe("CachedEventRepository", () => {
 
     expect(event?.name).toBe("Rooftop Jazz Night");
     expect(inner.calls).toBe(1);
+  });
+
+  it("reads through when a cache read never settles, within the deadline", async () => {
+    vi.useFakeTimers();
+    const { repo, inner, cache } = world();
+    cache.hanging = true;
+
+    const pending = repo.findById(DEFAULT_EVENT_ID);
+    // One deadline for the read that never answers, one for the write-back
+    // that never answers either; the caller gets its event after both.
+    await vi.advanceTimersByTimeAsync(CACHE_COMMAND_DEADLINE_MS);
+    await vi.advanceTimersByTimeAsync(CACHE_COMMAND_DEADLINE_MS);
+
+    expect((await pending)?.name).toBe("Rooftop Jazz Night");
+    expect(inner.calls).toBe(1);
+  });
+
+  it("returns the event when the cache write never settles, within the deadline", async () => {
+    vi.useFakeTimers();
+    const { repo, cache } = world();
+    const client = cache;
+    const originalGet = client.get.bind(client);
+    // The read misses normally; only the write hangs.
+    client.get = async (key: string): Promise<string | null> => {
+      const value = await originalGet(key);
+      client.hanging = true;
+      return value;
+    };
+
+    const pending = repo.findById(DEFAULT_EVENT_ID);
+    await vi.advanceTimersByTimeAsync(CACHE_COMMAND_DEADLINE_MS);
+
+    expect((await pending)?.name).toBe("Rooftop Jazz Night");
+  });
+
+  it("refuses to invalidate while the client is not ready, instead of hanging", async () => {
+    const { repo, cache } = world();
+    cache.status = "reconnecting";
+
+    await expect(repo.invalidate(DEFAULT_EVENT_ID)).rejects.toThrow(/reconnecting/);
+  });
+
+  it("fails an invalidation that never settles, at the deadline", async () => {
+    vi.useFakeTimers();
+    const { repo, cache } = world();
+    cache.hanging = true;
+
+    const pending = repo.invalidate(DEFAULT_EVENT_ID);
+    const outcome = expect(pending).rejects.toThrow(/exceeded/);
+    await vi.advanceTimersByTimeAsync(CACHE_COMMAND_DEADLINE_MS);
+
+    await outcome;
+  });
+
+  it("returns null for an unknown event even when a corrupt key is present, and does not rewrite it", async () => {
+    const { repo, cache } = world();
+    cache.entries.set(keys.eventCache(UNKNOWN), { value: "{", ttlSeconds: 300 });
+
+    const event = await repo.findById(UNKNOWN);
+
+    expect(event).toBeNull();
+    expect(cache.entries.get(keys.eventCache(UNKNOWN))?.value).toBe("{");
   });
 
   it("passes listUpcoming through untouched", async () => {

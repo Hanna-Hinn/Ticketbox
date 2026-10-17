@@ -1,6 +1,6 @@
 import { fileURLToPath } from "node:url";
 import type { Redis } from "ioredis";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { compose, type System } from "../../../src/main/composition.js";
 import { runMigrations } from "../../../src/infrastructure/postgres/migrations.js";
 import { seed } from "../../../src/infrastructure/postgres/seed.js";
@@ -36,6 +36,22 @@ afterAll(async () => {
   await system.close();
   await redis.quit();
 });
+
+// Every test owns its cache state, and the composed client must be ready
+// before a test that expects the cache to be written.
+beforeEach(async () => {
+  await redis.flushdb();
+  await waitForReady();
+});
+
+async function waitForReady(): Promise<void> {
+  for (let attempt = 0; attempt < 50; attempt += 1) {
+    const health = await system.app.inject({ url: "/health" });
+    if (health.json<{ checks: { redis: string } }>().checks.redis === "ok") return;
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  }
+  throw new Error("the composed Redis client never became ready");
+}
 
 describe("compose", () => {
   it("wires a system whose health check reaches Postgres and Redis", async () => {
