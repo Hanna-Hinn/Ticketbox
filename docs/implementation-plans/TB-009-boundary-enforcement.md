@@ -1,6 +1,6 @@
 # TB-009 — Architecture boundary enforcement
 
-**Status:** Approved
+**Status:** Implemented — see [`docs/tasks/TB-009-boundary-enforcement.md`](../tasks/TB-009-boundary-enforcement.md); the Phase 3 review found three bypasses in the first draft (decisions 6–9)
 **Date:** 2026-10-17
 **Task:** TB-009 (`docs/02-product-delivery-plan.md`)
 **Branch:** `feat/TB-009-boundary-enforcement` (stacked on `feat/TB-008-use-cases-and-fakes`)

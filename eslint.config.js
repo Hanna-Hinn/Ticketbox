@@ -96,7 +96,7 @@ const layerBoundaries = [
     [
       {
         group: ["**/presentation/**", "**/main/**", "**/worker/**", "**/test/**"],
-        message: "infrastructure/ imports inward only — never presentation/ or main/.",
+        message: "infrastructure/ imports inward only — never presentation/, main/ or test/.",
       },
     ],
   ),
@@ -105,7 +105,7 @@ const layerBoundaries = [
     [
       {
         group: ["**/infrastructure/**", "**/main/**", "**/worker/**", "**/test/**"],
-        message: "presentation/ imports inward only — never infrastructure/ or main/.",
+        message: "presentation/ imports inward only — never infrastructure/, main/ or test/.",
       },
     ],
   ),

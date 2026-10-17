@@ -408,7 +408,7 @@ Do not proceed to TB-022 until you have seen this fail with your own eyes. Readi
 
 ```
 Stage 0  ■■■■■              TB-001 002 003 004 005
-Stage 1  ■■■□               TB-006 007 008 009
+Stage 1  ■■■■               TB-006 007 008 009
 Stage 2  □□□□               TB-010 011 012 013
 Stage 3  □□□                TB-014 015 016
 Stage 4  □□□ + spike        TB-017 018 019 019a
