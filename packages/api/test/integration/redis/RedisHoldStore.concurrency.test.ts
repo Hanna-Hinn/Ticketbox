@@ -57,6 +57,9 @@ describe("200 concurrent reserves of 2 against a tier with 10 remaining", () => 
   );
 });
 
+// Also the only test that exercises the script's own compare through the
+// adapter: every sequential release is answered by the adapter's prelude
+// read before the script runs. Do not trim the runs.
 describe("50 concurrent releases of the same hold", () => {
   it.each(Array.from({ length: 10 }, (_, i) => i + 1))(
     "gives the tickets back exactly once (run %i)",

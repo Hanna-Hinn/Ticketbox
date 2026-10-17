@@ -345,7 +345,7 @@ describe("RedisHoldStore.release (release_hold.lua)", () => {
     expect(await redis.zcard(keys.tierHolds(TIER))).toBe(1);
   });
 
-  it("the script itself: a missing hold is -1 and touches nothing; a missing counter is -2", async () => {
+  it("the script itself: a missing hold is -1, a tier mismatch is -1, and the real tier restores", async () => {
     // Every Lua script gets its own test. The adapter's prelude read
     // normally short-circuits a missing hold; the compare inside the script
     // is what holds when the hold vanishes between that read and the run.
@@ -356,19 +356,94 @@ describe("RedisHoldStore.release (release_hold.lua)", () => {
       keys.tier(TIER),
       keys.tierHolds(TIER),
       "tok-gone",
+      TIER,
     );
     await store.reserve(held(2));
-    const noCounter = await redis.releaseHold(
+    const wrongTier = await redis.releaseHold(
       keys.hold(holdToken("tok-1")),
       keys.tier(OTHER),
       keys.tierHolds(OTHER),
       "tok-1",
+      OTHER,
+    );
+    await redis.hset(keys.tier(OTHER), "remaining", 5);
+    const noCounter = await redis.releaseHold(
+      keys.hold(holdToken("tok-1")),
+      keys.tier(TIER),
+      keys.tierHolds(TIER),
+      "tok-1",
+      TIER,
     );
 
     expect(gone).toBe(-1);
-    expect(noCounter).toBe(-2);
+    expect(wrongTier).toBe(-1);
+    expect(noCounter).toBe(8 + 2);
+    expect(await redis.hget(keys.tier(TIER), "remaining")).toBe("10");
+    expect(await redis.hget(keys.tier(OTHER), "remaining")).toBe("5");
+    expect(await redis.exists(keys.hold(holdToken("tok-1")))).toBe(0);
+  });
+
+  it("the script itself: a hold whose tier has no counter is -2 and touches nothing", async () => {
+    await redis.hset(keys.tier(TIER), "remaining", 10);
+    const hold = held(2);
+    await store.reserve(hold);
+    await redis.del(keys.tier(TIER));
+
+    const reply = await redis.releaseHold(
+      keys.hold(hold.token),
+      keys.tier(TIER),
+      keys.tierHolds(TIER),
+      hold.token,
+      TIER,
+    );
+
+    expect(reply).toBe(-2);
+    expect(await redis.exists(keys.hold(hold.token))).toBe(1);
+    expect(await redis.zcard(keys.tierHolds(TIER))).toBe(1);
+  });
+
+  it("throws on a counter that is not an integer, and has touched nothing", async () => {
+    // The restore runs before the deletes: a script's earlier writes are
+    // not undone when a later command raises, so a hold deleted first would
+    // have taken its tickets and the sweeper's trace of them with it.
+    await redis.hset(keys.tier(TIER), "remaining", 10);
+    const hold = held(2);
+    await store.reserve(hold);
+    await redis.hset(keys.tier(TIER), "remaining", "abc");
+
+    await expect(store.release(hold.token)).rejects.toThrow(/not an integer/);
+
+    expect(await redis.exists(keys.hold(hold.token))).toBe(1);
+    expect(await redis.zcard(keys.tierHolds(TIER))).toBe(1);
+    expect(await redis.hget(keys.tier(TIER), "remaining")).toBe("abc");
+  });
+
+  it("throws on a hold with no qty, and has touched nothing", async () => {
+    await redis.hset(keys.tier(TIER), "remaining", 10);
+    const hold = held(2);
+    await store.reserve(hold);
+    await redis.hdel(keys.hold(hold.token), "qty");
+
+    await expect(store.release(hold.token)).rejects.toThrow();
+
+    expect(await redis.exists(keys.hold(hold.token))).toBe(1);
+    expect(await redis.zcard(keys.tierHolds(TIER))).toBe(1);
     expect(await redis.hget(keys.tier(TIER), "remaining")).toBe("8");
-    expect(await redis.exists(keys.hold(holdToken("tok-1")))).toBe(1);
+  });
+
+  it("maps the script's 'nothing to release' to released: false when the hold vanishes after the read", async () => {
+    // The prelude read normally answers first; stubbing it is how the
+    // adapter's -1 branch is reached deterministically.
+    await redis.hset(keys.tier(TIER), "remaining", 10);
+    const stubbed = await connectToTestRedis();
+    const racing = new RedisHoldStore(stubbed, pino({ level: "silent" }));
+    stubbed.hget = async () => TIER;
+
+    const result = await racing.release(holdToken("tok-vanished"));
+
+    expect(result).toEqual({ released: false });
+    expect(await redis.hget(keys.tier(TIER), "remaining")).toBe("10");
+    stubbed.disconnect();
   });
 
   it("fails fast on a client that is not connected", async () => {
@@ -378,5 +453,26 @@ describe("RedisHoldStore.release (release_hold.lua)", () => {
     await expect(offline.release(holdToken("tok-1"))).rejects.toThrow(/cannot release/);
 
     disconnected.disconnect();
+  });
+
+  it("gives up on a silent client at the deadline, on the read and on the script", async () => {
+    // Two awaited commands, two deadlines; the ~1 s waits are the subject.
+    await redis.hset(keys.tier(TIER), "remaining", 10);
+    const hold = held(2);
+    await store.reserve(hold);
+    // Stub after constructing: the constructor's defineCommand puts the
+    // real releaseHold on the instance and would overwrite a stub set before.
+    const silentRead = await connectToTestRedis();
+    const readStuck = new RedisHoldStore(silentRead, pino({ level: "silent" }));
+    silentRead.hget = () => new Promise<string | null>(() => undefined);
+    const silentScript = await connectToTestRedis();
+    const scriptStuck = new RedisHoldStore(silentScript, pino({ level: "silent" }));
+    silentScript.releaseHold = () => new Promise<number>(() => undefined);
+
+    await expect(readStuck.release(hold.token)).rejects.toThrow(/release exceeded 1000ms/);
+    await expect(scriptStuck.release(hold.token)).rejects.toThrow(/release exceeded 1000ms/);
+
+    silentRead.disconnect();
+    silentScript.disconnect();
   });
 });

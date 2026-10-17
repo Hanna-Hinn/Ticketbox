@@ -88,7 +88,13 @@ export class RedisHoldStore implements HoldStore {
     if (tier === null) return { released: false };
     const owner = tierId(tier);
     const left = await within(
-      this.redis.releaseHold(keys.hold(token), keys.tier(owner), keys.tierHolds(owner), token),
+      this.redis.releaseHold(
+        keys.hold(token),
+        keys.tier(owner),
+        keys.tierHolds(owner),
+        token,
+        owner,
+      ),
       HOLD_COMMAND_DEADLINE_MS,
       "release",
     );
