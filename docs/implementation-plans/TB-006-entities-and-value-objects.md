@@ -1,6 +1,6 @@
 # TB-006 — Entities and value objects
 
-**Status:** Approved
+**Status:** Implemented — see [`docs/tasks/TB-006-entities-and-value-objects.md`](../tasks/TB-006-entities-and-value-objects.md); the Phase 3 review found the entities mutable through their `Date` fields (decisions 9–12 record the fixes)
 **Date:** 2026-10-17
 **Task:** TB-006 (`docs/02-product-delivery-plan.md`)
 **Branch:** `feat/TB-006-entities-and-value-objects` (stacked on `feat/TB-005-ci-pipeline`)
@@ -89,18 +89,18 @@ Entities: `private constructor`, `static create(props)` that checks invariants a
 
 ## 4. Files
 
-| File                                                              | New / Changed | Why                                |
-| ----------------------------------------------------------------- | ------------- | ---------------------------------- |
-| `packages/api/src/domain/value-objects/Ids.ts`                    | New           | Branded IDs                        |
-| `packages/api/src/domain/value-objects/HoldToken.ts`              | New           | Branded token                      |
-| `packages/api/src/domain/value-objects/Money.ts`                  | New           | Integer cents                      |
-| `packages/api/src/domain/value-objects/Quantity.ts`               | New           | 1…10                               |
-| `packages/api/src/domain/entities/Event.ts`                       | New           |                                    |
-| `packages/api/src/domain/entities/TicketTier.ts`                  | New           | `canFulfil`                        |
-| `packages/api/src/domain/entities/Hold.ts`                        | New           | `isExpired`, `remainingMs`         |
-| `packages/api/src/domain/entities/Order.ts`                       | New           | `total`, `OrderItem`               |
-| `packages/api/src/domain/errors/DomainError.ts` + five subclasses | New           |                                    |
-| `packages/api/test/unit/domain/**/*.test.ts`                      | New           | One test file per source file (§5) |
+| File                                                             | New / Changed | Why                                             |
+| ---------------------------------------------------------------- | ------------- | ----------------------------------------------- |
+| `packages/api/src/domain/value-objects/Ids.ts`                   | New           | Branded IDs                                     |
+| `packages/api/src/domain/value-objects/HoldToken.ts`             | New           | Branded token                                   |
+| `packages/api/src/domain/value-objects/Money.ts`                 | New           | Integer cents                                   |
+| `packages/api/src/domain/value-objects/Quantity.ts`              | New           | 1…10                                            |
+| `packages/api/src/domain/entities/Event.ts`                      | New           |                                                 |
+| `packages/api/src/domain/entities/TicketTier.ts`                 | New           | `canFulfil`                                     |
+| `packages/api/src/domain/entities/Hold.ts`                       | New           | `isExpired`, `remainingMs`                      |
+| `packages/api/src/domain/entities/Order.ts`                      | New           | `total`, `OrderItem`                            |
+| `packages/api/src/domain/errors/DomainError.ts` + six subclasses | New           | `InvalidEvent` added after review (decision 11) |
+| `packages/api/test/unit/domain/**/*.test.ts`                     | New           | One test file per source file (§5)              |
 
 No `package.json` change: the domain has no dependencies, by definition.
 
