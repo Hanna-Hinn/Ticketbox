@@ -125,6 +125,35 @@ describe("RedisHoldStore.reserve (create_hold.lua)", () => {
     expect(await redis.zcard(keys.tierHolds(TIER))).toBe(1);
   });
 
+  it("refuses a replay whose counter has gone missing, instead of answering nothing", async () => {
+    // The receipt exists, the counter does not (evicted between the two
+    // runs): the replay gets the same refusal a first run would, and the
+    // warn, not a nil that the adapter would type as a number.
+    await redis.hset(keys.tier(TIER), "remaining", 10);
+    const hold = held(2);
+    await store.reserve(hold);
+    await redis.del(keys.tier(TIER));
+
+    const replay = await store.reserve(hold);
+
+    expect(replay).toEqual({ ok: false, reason: "insufficient" });
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0]).toContain("no live counter");
+    expect(await redis.exists(keys.tier(TIER))).toBe(0);
+  });
+
+  it("refuses a replay whose counter is no longer a number", async () => {
+    await redis.hset(keys.tier(TIER), "remaining", 10);
+    const hold = held(2);
+    await store.reserve(hold);
+    await redis.hset(keys.tier(TIER), "remaining", "ten");
+
+    const replay = await store.reserve(hold);
+
+    expect(replay).toEqual({ ok: false, reason: "insufficient" });
+    expect(warnings).toHaveLength(1);
+  });
+
   it("fails rather than guessing when the counter is not a number", async () => {
     await redis.hset(keys.tier(TIER), "remaining", "ten");
 
@@ -151,6 +180,8 @@ describe("RedisHoldStore.reserve (create_hold.lua)", () => {
     // settles must be abandoned by the deadline, not by the OS.
     const silent = await connectToTestRedis();
     const stuck = new RedisHoldStore(silent, pino({ level: "silent" }));
+    // defineCommand puts createHold on the instance as an own property
+    // (Commander.js), so a plain assignment shadows it; no spy needed.
     silent.createHold = () => new Promise<number>(() => undefined);
     const started = Date.now();
 
