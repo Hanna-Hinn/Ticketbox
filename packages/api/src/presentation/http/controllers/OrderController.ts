@@ -10,7 +10,7 @@ export class OrderController {
     const result = await this.confirmOrder.execute({
       holdToken: holdToken(body.holdToken),
       email: body.email,
-      ...(idempotencyKey === undefined ? {} : { idempotencyKey }),
+      idempotencyKey: idempotencyKey ?? null,
     });
     if (!result.ok) throw new HoldGone(body.holdToken);
     return {
@@ -18,7 +18,7 @@ export class OrderController {
       holdToken: result.holdToken,
       email: result.email,
       totalCents: result.totalCents,
-      items: result.items.map((item) => ({ ...item })),
+      items: [...result.items],
       createdAt: result.createdAt.toISOString(),
     };
   }

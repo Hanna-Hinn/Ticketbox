@@ -10,7 +10,7 @@ import type { OrderRepository } from "../ports/OrderRepository.js";
 export interface ConfirmOrderInput {
   readonly holdToken: HoldToken;
   readonly email: string;
-  readonly idempotencyKey?: string;
+  readonly idempotencyKey: string | null;
 }
 
 export type ConfirmOrderOutput =
@@ -30,7 +30,12 @@ export type ConfirmOrderOutput =
 // order (ADR 0007): the other way round lets the sweeper restore a ticket
 // an order already owns. A Postgres failure after the consume leaves the
 // hold gone and no order: an under-sell reconcile repairs, never an
-// oversell. The store's find is the data; the consume is the decision.
+// oversell. The store's find is the data; the consume is the decision. Two
+// windows this order leaves open, both in ADR 0007: a reused idempotency
+// key on a fresh hold consumes the hold and writes no order (TB-030's layer
+// answers the retry before any of this runs), and a reconcile landing
+// between the consume and the commit expires the row and fails the
+// confirm — tickets back on sale, one lost sale, never an oversell.
 export class ConfirmOrderUseCase {
   constructor(
     private readonly events: EventRepository,
@@ -42,7 +47,13 @@ export class ConfirmOrderUseCase {
 
   async execute(input: ConfirmOrderInput): Promise<ConfirmOrderOutput> {
     const hold = await this.holds.find(input.holdToken);
-    if (hold === null) return { ok: false, reason: "hold-gone" };
+    // The clock is read once, after the lookup: the order's createdAt and
+    // the expiry check are the same instant. The store decides below; the
+    // entity decides here, as GetHold does, so the checkout page and the
+    // confirm never disagree about a hold in the skew between the app's
+    // clock and Redis's.
+    const now = this.clock.now();
+    if (hold === null || hold.isExpired(now)) return { ok: false, reason: "hold-gone" };
 
     // A hold references an event with its tier; their absence is a bug, not
     // a thing to tell the customer.
@@ -63,8 +74,8 @@ export class ConfirmOrderUseCase {
       holdToken: hold.token,
       email: input.email,
       items: [{ tierId: tier.id, qty: hold.qty, unitPrice: tier.price }],
-      createdAt: this.clock.now(),
-      ...(input.idempotencyKey === undefined ? {} : { idempotencyKey: input.idempotencyKey }),
+      createdAt: now,
+      ...(input.idempotencyKey === null ? {} : { idempotencyKey: input.idempotencyKey }),
     });
 
     // The decision. Expired, swept, released or confirmed since the read:

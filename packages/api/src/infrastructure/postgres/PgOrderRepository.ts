@@ -16,6 +16,18 @@ export class PgOrderRepository implements OrderRepository {
     const client = await this.pool.connect();
     try {
       await client.query("BEGIN");
+      // First, and exactly one row: a hold with no active row — none at all,
+      // or one already expired or released — cannot be confirmed (ADR 0007).
+      // First also takes the row lock before anything is inserted, so a
+      // reconcile racing this confirm waits here instead of between the
+      // inserts and the flip.
+      const flipped = await client.query(
+        `UPDATE holds SET status = 'converted' WHERE token = $1 AND status = 'active'`,
+        [order.holdToken],
+      );
+      if (flipped.rowCount !== 1) {
+        throw new Error(`hold ${order.holdToken} has no active row to convert`);
+      }
       await client.query(
         `INSERT INTO orders (id, hold_token, email, total_cents, created_at, idempotency_key)
          VALUES ($1, $2, $3, $4, $5, $6)`,
@@ -35,22 +47,14 @@ export class PgOrderRepository implements OrderRepository {
           [order.id, item.tierId, item.qty.value, item.unitPrice.cents],
         );
       }
-      // Only out of 'active', and exactly one row: a hold with no active row
-      // cannot be confirmed (ADR 0007) — the transaction unwinds and nothing
-      // above survives.
-      const flipped = await client.query(
-        `UPDATE holds SET status = 'converted' WHERE token = $1 AND status = 'active'`,
-        [order.holdToken],
-      );
-      if (flipped.rowCount !== 1) {
-        throw new Error(`hold ${order.holdToken} has no active row to convert`);
-      }
       await client.query("COMMIT");
-    } catch (err: unknown) {
-      await client.query("ROLLBACK").catch(() => undefined);
-      throw translate(err);
-    } finally {
       client.release();
+    } catch (err: unknown) {
+      // release(err): a client whose ROLLBACK could not be confirmed is not
+      // handed back to the pool mid-transaction.
+      await client.query("ROLLBACK").catch(() => undefined);
+      client.release(err instanceof Error ? err : new Error(String(err)));
+      throw translate(err);
     }
   }
 }

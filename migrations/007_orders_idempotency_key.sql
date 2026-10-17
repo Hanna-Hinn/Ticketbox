@@ -3,4 +3,6 @@
 -- required, and UNIQUE admits any number of NULLs, so orders placed without
 -- one are unconstrained by it. The constraint is the truth; TB-030's Redis
 -- layer is the speed in front of it.
-ALTER TABLE orders ADD COLUMN idempotency_key text UNIQUE;
+-- Named, because the adapter translates this one violation into the
+-- domain's word for it; a rename must not turn that 409 into a 500.
+ALTER TABLE orders ADD COLUMN idempotency_key text CONSTRAINT orders_idempotency_key_key UNIQUE;

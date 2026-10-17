@@ -26,14 +26,16 @@
 --
 -- Returns 1 when consumed; -1 when there is nothing to consume (expired,
 -- swept, released, already confirmed — the store cannot tell which and the
--- caller does not need to). On -1 nothing is written.
+-- caller does not need to). On -1, and on an error, nothing is written.
 if redis.call('EXISTS', KEYS[1]) == 0 then
   return -1
 end
 if redis.call('HGET', KEYS[1], 'tierId') ~= ARGV[2] then
   return -1
 end
-local qty = redis.call('HGET', KEYS[1], 'qty')
+-- The member is built before anything is removed: a hash with no qty
+-- raises here, with nothing written, as the sibling scripts promise.
+local member = ARGV[1] .. ':' .. redis.call('HGET', KEYS[1], 'qty')
 redis.call('DEL', KEYS[1])
-redis.call('ZREM', KEYS[2], ARGV[1] .. ':' .. qty)
+redis.call('ZREM', KEYS[2], member)
 return 1
